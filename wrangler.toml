@@ -1,18 +1,19 @@
-name = "ai-generator-multi-model"
+name = "fluxai"
 main = "worker.js"
-compatibility_date = "2025-11-28"
+compatibility_date = "2024-01-01"
 
-# 關鍵修復: 強制顯式声明為空數組
-compatibility_flags = []
+# [vars] 區塊定義環境變量
+# 注意：敏感信息（如真正的 API Key）建議在 Cloudflare Dashboard 的 Settings -> Variables 中設置
+[vars]
+PROJECT_NAME = "ai-generator-multi-model"
+PROJECT_VERSION = "2.16.1"
+API_MASTER_KEY = "1"
 
-# 關鍵修復: 滿足 Cloudflare 新版部署要求
+# 觀察模式配置 (可選)
 [observability]
 enabled = true
+head_sampling_rate = 1 # 100% 採樣日誌，方便調試
 
-# 环境变量说明
-# 请在 Cloudflare Dashboard 中设置:
-# API_MASTER_KEY = "your-secret-key"
-
-# 本地开发配置
-[dev]
-port = 8787
+# 觸發器配置 (可選，如果需要定時任務)
+# [triggers]
+# crons = ["0 0 * * *"]
