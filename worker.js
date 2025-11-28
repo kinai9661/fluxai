@@ -1,24 +1,36 @@
 // =================================================================================
-//  项目: ai-generator-2api (Cloudflare Worker 单文件版)
-//  版本: 2.6.1 (代号: Multi-Model Edition)
-//  作者: 首席AI执行官
+//  項目: ai-generator-2api (Cloudflare Worker 單文件版)
+//  版本: 2.7.0 (代號: Artistic Freedom Edition)
+//  作者: 首席AI執行官
 //  日期: 2025-11-28
 //
-//  [v2.6.1 变更日志]
-//  1. [修复] Flux Pro/1.1 Pro 模型限制为单张生成
-//  2. [修复] DALL-E 3 模型限制为单张生成
-//  3. [增强] Web UI 根据模型动态调整数量选项
-//  4. [优化] 添加模型限制提示信息
+//  [v2.7.0 變更日誌]
+//  1. [新增] 藝術創作模式 - 支持 NSFW 內容生成
+//  2. [安全] 年齡驗證和內容警告機制
+//  3. [合規] 詳細的使用條款和免責聲明
+//  4. [控制] 可配置的安全模式開關
+//
+//  ⚠️ 重要聲明:
+//  本工具僅用於合法的藝術創作目的。用戶需遵守當地法律法規。
+//  禁止生成任何涉及未成年人、非自願參與者或非法內容的圖像。
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.6.1",
+  PROJECT_VERSION: "2.7.0",
   
   API_MASTER_KEY: "1", 
   
   UPSTREAM_ORIGIN: "https://ai-image-generator.co",
+  
+  // 內容安全配置
+  SAFETY_CONFIG: {
+    enableNSFW: true,           // 是否允許 NSFW 內容
+    requireAgeVerification: true, // 是否需要年齡驗證
+    minAge: 18,                 // 最低年齡要求
+    logNSFWRequests: true,      // 記錄 NSFW 請求
+  },
   
   MODELS: [
     "flux-schnell",
@@ -32,7 +44,6 @@ const CONFIG = {
   
   DEFAULT_MODEL: "flux-schnell",
   
-  // 模型配置: 每个模型的参数
   MODEL_CONFIGS: {
     "flux-schnell": {
       displayName: "Flux Schnell",
@@ -40,8 +51,9 @@ const CONFIG = {
       credits: 1,
       speed: "fast",
       quality: "good",
-      description: "快速生成,适合快速迭代",
-      maxImages: 4  // 支持 1-4 张
+      description: "快速生成,適合快速迭代",
+      maxImages: 4,
+      supportsNSFW: true  // 支持 NSFW 內容
     },
     "flux-dev": {
       displayName: "Flux Dev",
@@ -49,8 +61,9 @@ const CONFIG = {
       credits: 2,
       speed: "medium",
       quality: "excellent",
-      description: "开发版本,高质量输出",
-      maxImages: 4  // 支持 1-4 张
+      description: "開發版本,高質量輸出",
+      maxImages: 4,
+      supportsNSFW: true
     },
     "flux-pro": {
       displayName: "Flux Pro",
@@ -58,8 +71,9 @@ const CONFIG = {
       credits: 5,
       speed: "slow",
       quality: "best",
-      description: "专业版本,最高质量 (仅单张)",
-      maxImages: 1  // 仅支持单张
+      description: "專業版本,最高質量 (僅單張)",
+      maxImages: 1,
+      supportsNSFW: true
     },
     "flux-1.1-pro": {
       displayName: "Flux 1.1 Pro",
@@ -67,8 +81,9 @@ const CONFIG = {
       credits: 6,
       speed: "slow",
       quality: "best",
-      description: "2025最新版本 (仅单张)",
-      maxImages: 1  // 仅支持单张
+      description: "2025最新版本 (僅單張)",
+      maxImages: 1,
+      supportsNSFW: true
     },
     "stable-diffusion-xl": {
       displayName: "Stable Diffusion XL",
@@ -76,8 +91,9 @@ const CONFIG = {
       credits: 2,
       speed: "medium",
       quality: "excellent",
-      description: "开源经典模型",
-      maxImages: 4  // 支持 1-4 张
+      description: "開源經典模型",
+      maxImages: 4,
+      supportsNSFW: true
     },
     "stable-diffusion-3": {
       displayName: "Stable Diffusion 3",
@@ -86,7 +102,8 @@ const CONFIG = {
       speed: "medium",
       quality: "excellent",
       description: "SD3 最新版本",
-      maxImages: 4  // 支持 1-4 张
+      maxImages: 4,
+      supportsNSFW: true
     },
     "dall-e-3": {
       displayName: "DALL-E 3",
@@ -94,8 +111,9 @@ const CONFIG = {
       credits: 4,
       speed: "medium",
       quality: "excellent",
-      description: "OpenAI 官方模型 (仅单张)",
-      maxImages: 1  // 仅支持单张
+      description: "OpenAI 官方模型 (僅單張)",
+      maxImages: 1,
+      supportsNSFW: false  // DALL-E 3 不支持 NSFW
     }
   },
   
@@ -111,6 +129,11 @@ export default {
     
     if (request.method === 'OPTIONS') {
       return handleCorsPreflight();
+    }
+
+    // 年齡驗證頁面
+    if (url.pathname === '/age-verify') {
+      return handleAgeVerification(request);
     }
 
     if (url.pathname === '/') {
@@ -131,7 +154,7 @@ export default {
   }
 };
 
-// --- [第三部分: 核心业务逻辑] ---
+// --- [第三部分: 核心業務邏輯] ---
 
 class Logger {
     constructor() { this.logs = []; }
@@ -181,7 +204,7 @@ function getModelConfig(model) {
     return CONFIG.MODEL_CONFIGS[model] || CONFIG.MODEL_CONFIGS[CONFIG.DEFAULT_MODEL];
 }
 
-async function performUpstreamGeneration(prompt, model, aspectRatio, logger, index = 0) {
+async function performUpstreamGeneration(prompt, model, aspectRatio, logger, index = 0, safeMode = true) {
     const fingerprint = generateFingerprint();
     const anonUserId = crypto.randomUUID(); 
     const { headers, fakeIP } = getFakeHeaders(fingerprint, anonUserId);
@@ -192,6 +215,7 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
     logger.add(`${logPrefix}Identity Created`, { 
         model: model,
         provider: modelConfig.provider,
+        safeMode: safeMode,
         fingerprint, 
         anonUserId, 
         fakeIP: fakeIP
@@ -231,7 +255,16 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
     formData.append("model", model);
     formData.append("num_outputs", "1");
     formData.append("inputMode", "text");
-    formData.append("style", "auto");
+    
+    // 安全模式控制
+    if (safeMode) {
+        formData.append("style", "auto");
+        formData.append("safe_mode", "true");
+    } else {
+        formData.append("style", "none");  // 無樣式限制
+        formData.append("safe_mode", "false");
+    }
+    
     formData.append("aspectRatio", aspectRatio || "1:1");
     formData.append("fingerprint_id", fingerprint);
     formData.append("provider", modelConfig.provider);
@@ -243,6 +276,7 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
         url: `${CONFIG.UPSTREAM_ORIGIN}/api/gen-image`,
         provider: modelConfig.provider,
         model: model,
+        safeMode: safeMode,
         prompt: prompt.substring(0, 50) + "...",
         aspectRatio: aspectRatio
     });
@@ -275,14 +309,9 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
     }
 }
 
-/**
- * 批量生成多张图片 (根据模型限制)
- */
-async function performBatchGeneration(prompt, model, aspectRatio, numImages, logger) {
+async function performBatchGeneration(prompt, model, aspectRatio, numImages, logger, safeMode = true) {
     const modelConfig = getModelConfig(model);
     const modelMaxImages = modelConfig.maxImages || 1;
-    
-    // 根据模型限制调整生成数量
     const count = Math.min(Math.max(1, numImages), modelMaxImages, CONFIG.MAX_IMAGES);
     
     if (numImages > modelMaxImages) {
@@ -290,7 +319,7 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
             requestedImages: numImages,
             modelMaxImages: modelMaxImages,
             model: model,
-            message: `${modelConfig.displayName} 最多支持 ${modelMaxImages} 张图片`
+            message: `${modelConfig.displayName} 最多支持 ${modelMaxImages} 張圖片`
         });
     }
     
@@ -298,6 +327,7 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
         requestedImages: numImages, 
         actualImages: count,
         model: model,
+        safeMode: safeMode,
         modelLimit: modelMaxImages,
         prompt: prompt.substring(0, 80) + "..."
     });
@@ -305,7 +335,7 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
     const promises = [];
     for (let i = 0; i < count; i++) {
         promises.push(
-            performUpstreamGeneration(prompt, model, aspectRatio, logger, i)
+            performUpstreamGeneration(prompt, model, aspectRatio, logger, i, safeMode)
                 .catch(err => {
                     logger.add(`Image ${i+1} Failed`, err.message);
                     return null;
@@ -352,6 +382,22 @@ async function handleChatCompletions(request, apiKey) {
 
         const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
         const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
+        const modelConfig = getModelConfig(model);
+        
+        // 檢查 NSFW 支持
+        const safeMode = body.safe_mode !== false; // 默認啟用安全模式
+        
+        if (!safeMode && !modelConfig.supportsNSFW) {
+            throw new Error(`模型 ${modelConfig.displayName} 不支持 NSFW 內容`);
+        }
+        
+        if (!safeMode && CONFIG.SAFETY_CONFIG.logNSFWRequests) {
+            logger.add("NSFW Request", {
+                model: model,
+                timestamp: new Date().toISOString(),
+                promptPreview: prompt.substring(0, 50) + "..."
+            });
+        }
         
         const numImages = Math.min(
             Math.max(1, body.n || body.num_images || CONFIG.DEFAULT_NUM_IMAGES), 
@@ -366,7 +412,7 @@ async function handleChatCompletions(request, apiKey) {
         else if (aspectRatio === "3:4") finalAspectRatio = "3:4";
         else finalAspectRatio = "1:1";
 
-        const imageUrls = await performBatchGeneration(prompt, model, finalAspectRatio, numImages, logger);
+        const imageUrls = await performBatchGeneration(prompt, model, finalAspectRatio, numImages, logger, safeMode);
 
         if (imageUrls.length === 0) {
             throw new Error("All image generations failed");
@@ -450,6 +496,13 @@ async function handleImageGenerations(request, apiKey) {
         
         const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
         const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
+        const modelConfig = getModelConfig(model);
+        
+        const safeMode = body.safe_mode !== false;
+        
+        if (!safeMode && !modelConfig.supportsNSFW) {
+            return createErrorResponse(`模型 ${modelConfig.displayName} 不支持 NSFW 內容`, 400, 'unsupported_content');
+        }
         
         let size = "1:1";
         if (body.size === "1024x1792") size = "9:16";
@@ -461,7 +514,7 @@ async function handleImageGenerations(request, apiKey) {
             CONFIG.MAX_IMAGES
         );
 
-        const imageUrls = await performBatchGeneration(prompt, model, size, numImages, logger);
+        const imageUrls = await performBatchGeneration(prompt, model, size, numImages, logger, safeMode);
 
         return new Response(JSON.stringify({
             created: Math.floor(Date.now() / 1000),
@@ -473,7 +526,7 @@ async function handleImageGenerations(request, apiKey) {
     }
 }
 
-// --- [辅助函数] ---
+// --- [輔助函數] ---
 
 function verifyAuth(request, validKey) {
     if (validKey === "1") return true; 
@@ -513,14 +566,101 @@ function handleModelsRequest() {
     }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
 }
 
+function handleAgeVerification(request) {
+    const url = new URL(request.url);
+    const verified = url.searchParams.get('verified') === 'true';
+    
+    if (verified) {
+        return new Response(null, {
+            status: 302,
+            headers: {
+                'Location': '/',
+                'Set-Cookie': 'age_verified=true; Max-Age=86400; Path=/; SameSite=Strict'
+            }
+        });
+    }
+    
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>年齡驗證 - AI Generator</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #09090b; color: #e4e4e7; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .container { max-width: 500px; padding: 40px; background: #18181b; border-radius: 12px; border: 1px solid #27272a; text-align: center; }
+        h1 { color: #f59e0b; margin-bottom: 20px; }
+        .warning { background: #7f1d1d; color: #fecaca; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .terms { text-align: left; font-size: 14px; color: #a1a1aa; margin: 20px 0; max-height: 200px; overflow-y: auto; padding: 15px; background: #000; border-radius: 6px; }
+        button { padding: 12px 24px; background: #f59e0b; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #000; font-size: 14px; margin: 10px; }
+        button:hover { filter: brightness(1.1); }
+        .decline { background: #3f3f46; color: #e4e4e7; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔞 年齡驗證</h1>
+        <div class="warning">
+            <strong>⚠️ 成人內容警告</strong><br>
+            本服務包含藝術創作功能,可能生成成人內容。
+        </div>
+        
+        <div class="terms">
+            <strong>使用條款:</strong><br><br>
+            1. 我已年滿 18 歲(或當地法定成年年齡)<br>
+            2. 我理解並同意僅將此工具用於合法的藝術創作目的<br>
+            3. 我承諾不會生成任何涉及未成年人、非自願參與者或非法內容的圖像<br>
+            4. 我理解生成的內容需遵守當地法律法規<br>
+            5. 我同意對自己生成的內容負全部責任<br><br>
+            <strong>禁止內容:</strong><br>
+            - 涉及未成年人的任何內容<br>
+            - 非自願的色情內容<br>
+            - 暴力、仇恨或非法內容<br>
+            - 侵犯他人權利的內容
+        </div>
+        
+        <p style="font-size: 16px; margin: 20px 0;">您是否已年滿 18 歲並同意以上條款?</p>
+        
+        <button onclick="verify()">✓ 是的,我已年滿 18 歲</button>
+        <button class="decline" onclick="decline()">✗ 否,我未滿 18 歲</button>
+    </div>
+    
+    <script>
+        function verify() {
+            document.cookie = 'age_verified=true; max-age=86400; path=/; SameSite=Strict';
+            window.location.href = '/';
+        }
+        function decline() {
+            alert('您必須年滿 18 歲才能使用本服務。');
+            window.location.href = 'https://www.google.com';
+        }
+    </script>
+</body>
+</html>`;
+    
+    return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
 // --- [第四部分: Web UI] ---
 function handleUI(request, apiKey) {
   const origin = new URL(request.url).origin;
   
+  // 檢查年齡驗證 Cookie
+  const cookies = request.headers.get('Cookie') || '';
+  const ageVerified = cookies.includes('age_verified=true');
+  
+  if (CONFIG.SAFETY_CONFIG.requireAgeVerification && !ageVerified) {
+    return new Response(null, {
+      status: 302,
+      headers: { 'Location': '/age-verify' }
+    });
+  }
+  
   const modelOptions = CONFIG.MODELS.map(modelId => {
     const config = CONFIG.MODEL_CONFIGS[modelId];
     const isDefault = modelId === CONFIG.DEFAULT_MODEL;
-    return `<option value="${modelId}" ${isDefault ? 'selected' : ''}>${config.displayName} - ${config.description}</option>`;
+    const nsfwTag = config.supportsNSFW ? '' : ' [僅安全模式]';
+    return `<option value="${modelId}" ${isDefault ? 'selected' : ''}>${config.displayName}${nsfwTag} - ${config.description}</option>`;
   }).join('\n');
   
   const html = `<!DOCTYPE html>
@@ -530,19 +670,23 @@ function handleUI(request, apiKey) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${CONFIG.PROJECT_NAME} v${CONFIG.PROJECT_VERSION}</title>
     <style>
-      :root { --bg: #09090b; --panel: #18181b; --border: #27272a; --text: #e4e4e7; --primary: #f59e0b; --accent: #3b82f6; --code-bg: #000000; }
+      :root { --bg: #09090b; --panel: #18181b; --border: #27272a; --text: #e4e4e7; --primary: #f59e0b; --accent: #3b82f6; --code-bg: #000000; --warning: #dc2626; }
       body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; height: 100vh; display: flex; overflow: hidden; }
       .sidebar { width: 360px; background: var(--panel); border-right: 1px solid var(--border); padding: 24px; display: flex; flex-direction: column; overflow-y: auto; }
       .main { flex: 1; display: flex; flex-direction: column; padding: 24px; background-color: #000; }
       h2 { margin-top: 0; font-size: 20px; color: #fff; display: flex; align-items: center; gap: 10px; }
       .badge { background: var(--primary); color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+      .badge-nsfw { background: var(--warning); color: #fff; }
       .box { background: #27272a; padding: 16px; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 20px; }
+      .warning-box { background: #7f1d1d; border-color: #991b1b; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #fecaca; }
       .label { font-size: 12px; color: #a1a1aa; margin-bottom: 8px; display: block; font-weight: 600; }
       .warning { font-size: 11px; color: #fbbf24; margin-top: -8px; margin-bottom: 12px; display: none; }
       .code-block { font-family: 'Consolas', monospace; font-size: 12px; color: var(--primary); background: #111; padding: 10px; border-radius: 6px; cursor: pointer; word-break: break-all; border: 1px solid #333; transition: 0.2s; }
       .code-block:hover { border-color: var(--primary); background: #1a1a1a; }
       input, select, textarea { width: 100%; background: #18181b; border: 1px solid #3f3f46; color: #fff; padding: 10px; border-radius: 6px; margin-bottom: 12px; box-sizing: border-box; transition: 0.2s; }
       input:focus, select:focus, textarea:focus { border-color: var(--primary); outline: none; }
+      input[type="checkbox"] { width: auto; margin-right: 8px; }
+      .checkbox-label { display: flex; align-items: center; margin-bottom: 12px; font-size: 13px; cursor: pointer; }
       button { width: 100%; padding: 12px; background: var(--primary); border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #000; font-size: 14px; transition: 0.2s; }
       button:hover { filter: brightness(1.1); }
       button:disabled { background: #3f3f46; color: #71717a; cursor: not-allowed; }
@@ -566,8 +710,13 @@ function handleUI(request, apiKey) {
     <div class="sidebar">
         <h2>🎨 Multi-Model <span class="badge">v${CONFIG.PROJECT_VERSION}</span></h2>
         
+        <div class="warning-box">
+            🔞 <strong>18+ 內容警告</strong><br>
+            本工具支持藝術創作模式。請負責任地使用。
+        </div>
+        
         <div class="box">
-            <span class="label">API 密钥</span>
+            <span class="label">API 密鑰</span>
             <div class="code-block" onclick="copy('${apiKey}')">${apiKey}</div>
         </div>
 
@@ -582,47 +731,53 @@ function handleUI(request, apiKey) {
                 ${modelOptions}
             </select>
             
-            <span class="label">🖼️ 生成数量</span>
+            <span class="label">🖼️ 生成數量</span>
             <select id="num-images">
-                <option value="1" selected>1 张</option>
-                <option value="2">2 张</option>
-                <option value="3">3 张</option>
-                <option value="4">4 张</option>
+                <option value="1" selected>1 張</option>
+                <option value="2">2 張</option>
+                <option value="3">3 張</option>
+                <option value="4">4 張</option>
             </select>
-            <div class="warning" id="model-warning">⚠️ 当前模型仅支持单张生成</div>
+            <div class="warning" id="model-warning">⚠️ 當前模型僅支持單張生成</div>
             
-            <span class="label">📊 图片比例</span>
+            <span class="label">📊 圖片比例</span>
             <select id="ratio">
                 <option value="1:1" selected>1:1 (方形)</option>
-                <option value="16:9">16:9 (横屏)</option>
-                <option value="9:16">9:16 (竖屏)</option>
+                <option value="16:9">16:9 (橫屏)</option>
+                <option value="9:16">9:16 (豎屏)</option>
                 <option value="4:3">4:3</option>
                 <option value="3:4">3:4</option>
             </select>
-
-            <span class="label">✨ 提示词</span>
-            <textarea id="prompt" rows="6" placeholder="描述你想生成的图片...\n\n例如: A futuristic city with neon lights, cyberpunk style"></textarea>
             
-            <button id="btn-gen" onclick="generate()">🚀 开始生成</button>
+            <label class="checkbox-label">
+                <input type="checkbox" id="safe-mode" checked onchange="updateSafeMode()">
+                🛡️ 安全模式 (推薦)
+            </label>
+            <div class="warning" id="nsfw-warning" style="display:none; color:#dc2626;">⚠️ 已關閉安全模式 - 請負責任使用</div>
+
+            <span class="label">✨ 提示詞</span>
+            <textarea id="prompt" rows="6" placeholder="描述你想生成的圖片...\n\n例如: A futuristic city with neon lights, cyberpunk style"></textarea>
+            
+            <button id="btn-gen" onclick="generate()">🚀 開始生成</button>
         </div>
     </div>
 
     <main class="main">
         <div class="result-area" id="result-container">
             <div style="color:#3f3f46; text-align:center;">
-                <p style="font-size: 16px;">📸 图片预览区域</p>
-                <p style="font-size: 12px;">支持 ${CONFIG.MODELS.length} 个 AI 模型 · 根据模型生成 1-4 张图片</p>
+                <p style="font-size: 16px;">📸 圖片預覽區域</p>
+                <p style="font-size: 12px;">支持 ${CONFIG.MODELS.length} 個 AI 模型 · 根據模型生成 1-4 張圖片</p>
                 <div class="spinner" id="spinner"></div>
             </div>
         </div>
         
         <div class="status-bar">
-            <span id="status-text">系统就绪 · ${CONFIG.MODELS.length} 个模型可用</span>
+            <span id="status-text">系統就緒 · ${CONFIG.MODELS.length} 個模型可用</span>
             <span id="time-text"></span>
         </div>
 
         <div class="log-panel" id="logs">
-            <div style="color:#52525b">// 等待请求...</div>
+            <div style="color:#52525b">// 等待請求...</div>
         </div>
     </main>
 
@@ -631,7 +786,25 @@ function handleUI(request, apiKey) {
         const ENDPOINT = "${origin}/v1/chat/completions";
         const MODEL_CONFIGS = ${JSON.stringify(CONFIG.MODEL_CONFIGS)};
 
-        function copy(text) { navigator.clipboard.writeText(text); alert('已复制'); }
+        function copy(text) { navigator.clipboard.writeText(text); alert('已複製'); }
+
+        function updateSafeMode() {
+            const safeMode = document.getElementById('safe-mode').checked;
+            const warning = document.getElementById('nsfw-warning');
+            const model = document.getElementById('model').value;
+            const modelConfig = MODEL_CONFIGS[model];
+            
+            if (!safeMode) {
+                if (!modelConfig.supportsNSFW) {
+                    alert('當前模型不支持關閉安全模式');
+                    document.getElementById('safe-mode').checked = true;
+                    return;
+                }
+                warning.style.display = 'block';
+            } else {
+                warning.style.display = 'none';
+            }
+        }
 
         function updateImageOptions() {
             const model = document.getElementById('model').value;
@@ -640,25 +813,25 @@ function handleUI(request, apiKey) {
             const modelConfig = MODEL_CONFIGS[model];
             const maxImages = modelConfig.maxImages || 4;
             
-            // 更新选项
             numImagesSelect.innerHTML = '';
             for (let i = 1; i <= maxImages; i++) {
                 const option = document.createElement('option');
                 option.value = i;
-                option.text = i + ' 张';
+                option.text = i + ' 張';
                 if (i === 1) option.selected = true;
                 numImagesSelect.appendChild(option);
             }
             
-            // 显示警告
             if (maxImages === 1) {
                 warning.style.display = 'block';
             } else {
                 warning.style.display = 'none';
             }
+            
+            // 檢查 NSFW 支持
+            updateSafeMode();
         }
         
-        // 初始化
         updateImageOptions();
 
         function appendLog(step, data) {
@@ -675,11 +848,12 @@ function handleUI(request, apiKey) {
 
         async function generate() {
             const prompt = document.getElementById('prompt').value.trim();
-            if (!prompt) return alert('请输入提示词');
+            if (!prompt) return alert('請輸入提示詞');
 
             const model = document.getElementById('model').value;
             const numImages = parseInt(document.getElementById('num-images').value) || 1;
             const aspectRatio = document.getElementById('ratio').value;
+            const safeMode = document.getElementById('safe-mode').checked;
 
             const btn = document.getElementById('btn-gen');
             const spinner = document.getElementById('spinner');
@@ -688,9 +862,11 @@ function handleUI(request, apiKey) {
             const timeText = document.getElementById('time-text');
 
             const modelConfig = MODEL_CONFIGS[model];
-            if(btn) { btn.disabled = true; btn.innerText = \`生成 \${numImages} 张中...\`; }
+            const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
+            
+            if(btn) { btn.disabled = true; btn.innerText = \`生成 \${numImages} 張中...\`; }
             if(spinner) spinner.style.display = 'inline-block';
-            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} 生成...\`;
+            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} (\${modeText}) 生成...\`;
             if(container) container.innerHTML = '<div class="spinner" style="display:block"></div>';
 
             const startTime = Date.now();
@@ -702,10 +878,11 @@ function handleUI(request, apiKey) {
                     stream: true,
                     is_web_ui: true,
                     n: numImages,
-                    aspect_ratio: aspectRatio
+                    aspect_ratio: aspectRatio,
+                    safe_mode: safeMode
                 };
 
-                appendLog("System", \`Using model: \${modelConfig.displayName} (max: \${modelConfig.maxImages} images)\`);
+                appendLog("System", \`Using \${modelConfig.displayName} (max: \${modelConfig.maxImages}, mode: \${modeText})\`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
@@ -754,24 +931,24 @@ function handleUI(request, apiKey) {
                     const gridHtml = imageUrls.map((url, idx) => 
                         \`<div class="image-item">
                             <img src="\${url}" class="result-img" onclick="window.open(this.src)">
-                            <div class="image-label">图片 \${idx + 1} / \${imageUrls.length}</div>
+                            <div class="image-label">圖片 \${idx + 1} / \${imageUrls.length}</div>
                         </div>\`
                     ).join('');
                     
                     if(container) container.innerHTML = \`<div class="image-grid">\${gridHtml}</div>\`;
-                    if(status) status.innerText = \`✅ \${modelConfig.displayName} 成功生成 \${imageUrls.length} 张\`;
-                    if(timeText) timeText.innerText = \`耗时: \${((Date.now()-startTime)/1000).toFixed(2)}s\`;
+                    if(status) status.innerText = \`✅ \${modelConfig.displayName} (\${modeText}) 成功生成 \${imageUrls.length} 張\`;
+                    if(timeText) timeText.innerText = \`耗時: \${((Date.now()-startTime)/1000).toFixed(2)}s\`;
                     appendLog("Success", \`Generated \${imageUrls.length} images\`);
                 } else {
-                    throw new Error("无法提取图片 URL");
+                    throw new Error("無法提取圖片 URL");
                 }
 
             } catch (e) {
                 if(container) container.innerHTML = \`<div style="color:#ef4444; padding:20px; text-align:center">❌ \${e.message}</div>\`;
-                if(status) status.innerText = "❌ 错误";
+                if(status) status.innerText = "❌ 錯誤";
                 appendLog("Error", e.message);
             } finally {
-                if(btn) { btn.disabled = false; btn.innerText = "🚀 开始生成"; }
+                if(btn) { btn.disabled = false; btn.innerText = "🚀 開始生成"; }
             }
         }
     </script>
