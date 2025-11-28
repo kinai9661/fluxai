@@ -1,27 +1,56 @@
 // =================================================================================
 //  項目: ai-generator-2api (Cloudflare Worker 單文件版)
-//  版本: 2.12.0 (代號: Pollinations Ultimate Edition)
+//  版本: 2.13.0 (代號: API Provider Selector)
 //  作者: 首席AI執行官
 //  日期: 2025-11-28
 //
-//  [v2.12.0 變更日誌]
-//  1. [新增] flux-pro 到 Pollinations 免費通道
-//  2. [新增] flux.1-kontext-por 情境理解模型
-//  3. [新增] flux-1.1-pro 最新專業版
-//  4. [擴展] 總共 12 個 Pollinations 免費模型
-//  5. [優化] 四級分類: 基礎/專業/特化/實驗
-//  6. [保留] 所有現有功能完整支持
+//  [v2.13.0 變更日誌]
+//  1. [新增] API 提供商選擇器 (Pollinations/Replicate/All)
+//  2. [新增] 按提供商過濾模型功能
+//  3. [新增] 提供商信息顯示 (模型數/費用/特點)
+//  4. [優化] 智能模型分組和排序
+//  5. [優化] UI 布局和交互體驗
+//  6. [保留] 所有 12 個 Pollinations 免費模型
+//  7. [保留] 所有現有功能完整支持
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.12.0",
+  PROJECT_VERSION: "2.13.0",
   
   API_MASTER_KEY: "1", 
   
   UPSTREAM_ORIGIN: "https://ai-image-generator.co",
   POLLINATIONS_ORIGIN: "https://image.pollinations.ai",
+  
+  // API 提供商配置
+  API_PROVIDERS: {
+    "pollinations": {
+      name: "Pollinations.ai",
+      description: "12個完全免費的專業AI模型",
+      icon: "🆓",
+      isFree: true,
+      modelCount: 12,
+      features: ["完全免費", "無需積分", "專業質量", "1-4張並發"]
+    },
+    "replicate": {
+      name: "Replicate",
+      description: "高端付費模型,需要積分",
+      icon: "💎",
+      isFree: false,
+      features: ["頂級質量", "官方模型", "穩定可靠"]
+    },
+    "all": {
+      name: "所有提供商",
+      description: "顯示所有可用模型",
+      icon: "🌐",
+      isFree: null,
+      features: ["免費+付費", "完整選擇"]
+    }
+  },
+  
+  DEFAULT_PROVIDER: "pollinations",
   
   // 安全配置
   SAFETY_CONFIG: {
@@ -333,6 +362,7 @@ export default {
     if (url.pathname === '/v1/models') return handleModelsRequest();
     if (url.pathname === '/v1/models/refresh') return handleModelsRefresh(request, apiKey);
     if (url.pathname === '/v1/styles') return handleStylesRequest();
+    if (url.pathname === '/v1/providers') return handleProvidersRequest();
     
     return createErrorResponse(`Endpoint not found: ${url.pathname}`, 404, 'not_found');
   }
@@ -937,6 +967,16 @@ function handleStylesRequest() {
     }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
 }
 
+function handleProvidersRequest() {
+    return new Response(JSON.stringify({
+        object: 'list',
+        data: Object.keys(CONFIG.API_PROVIDERS).map(id => ({
+            id,
+            ...CONFIG.API_PROVIDERS[id]
+        }))
+    }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
+}
+
 function handleAgeVerification(request) {
     const url = new URL(request.url);
     const verified = url.searchParams.get('verified') === 'true';
@@ -1024,6 +1064,12 @@ function handleUI(request, apiKey) {
     return `<option value="${styleId}" ${isDefault ? 'selected' : ''}>${style.name} - ${style.description}</option>`;
   }).join('\n');
   
+  const providerOptions = Object.keys(CONFIG.API_PROVIDERS).map(providerId => {
+    const provider = CONFIG.API_PROVIDERS[providerId];
+    const isDefault = providerId === CONFIG.DEFAULT_PROVIDER;
+    return `<option value="${providerId}" ${isDefault ? 'selected' : ''}>${provider.icon} ${provider.name} - ${provider.description}</option>`;
+  }).join('\n');
+  
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1040,6 +1086,7 @@ function handleUI(request, apiKey) {
       .box { background: #27272a; padding: 16px; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 20px; }
       .warning-box { background: #7f1d1d; border-color: #991b1b; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #fecaca; }
       .info-box { background: #064e3b; border: 1px solid #059669; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #6ee7b7; }
+      .provider-box { background: #1e3a8a; border: 1px solid #3b82f6; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 11px; color: #93c5fd; }
       .label { font-size: 12px; color: #a1a1aa; margin-bottom: 8px; display: block; font-weight: 600; }
       .warning { font-size: 11px; color: #fbbf24; margin-top: -8px; margin-bottom: 12px; display: none; }
       .code-block { font-family: 'Consolas', monospace; font-size: 12px; color: var(--primary); background: #111; padding: 10px; border-radius: 6px; cursor: pointer; word-break: break-all; border: 1px solid #333; transition: 0.2s; }
@@ -1094,6 +1141,12 @@ function handleUI(request, apiKey) {
         </div>
 
         <div class="box">
+            <span class="label">🌐 API 提供商</span>
+            <select id="provider" onchange="updateProvider()">
+                ${providerOptions}
+            </select>
+            <div id="provider-info" class="provider-box" style="margin-top: 12px;"></div>
+            
             <span class="label">🤖 AI 模型</span>
             <select id="model" onchange="updateModelInfo()">
                 <option value="pollinations-flux" selected>載入中...</option>
@@ -1142,7 +1195,7 @@ function handleUI(request, apiKey) {
         <div class="result-area" id="result-container">
             <div style="color:#3f3f46; text-align:center;">
                 <p style="font-size: 16px;">📸 圖片預覽區域</p>
-                <p style="font-size: 12px;">支持多個 AI 模型 · 包含 12 個 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
+                <p style="font-size: 12px;">支持多個 API 提供商 · 包含 12 個 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
                 <p style="font-size: 12px;">🎨 現已支持 ${Object.keys(CONFIG.STYLE_PRESETS).length} 種藝術風格</p>
                 <div class="spinner" id="spinner"></div>
             </div>
@@ -1163,10 +1216,13 @@ function handleUI(request, apiKey) {
         const ENDPOINT = "${origin}/v1/chat/completions";
         const MODELS_ENDPOINT = "${origin}/v1/models";
         const REFRESH_ENDPOINT = "${origin}/v1/models/refresh";
+        const PROVIDERS_ENDPOINT = "${origin}/v1/providers";
         const STYLES = ${JSON.stringify(CONFIG.STYLE_PRESETS)};
+        const PROVIDERS = ${JSON.stringify(CONFIG.API_PROVIDERS)};
         
         let MODEL_CONFIGS = {};
         let MODEL_IDS = [];
+        let CURRENT_PROVIDER = "${CONFIG.DEFAULT_PROVIDER}";
 
         function copy(text) { navigator.clipboard.writeText(text); alert('已複製'); }
 
@@ -1183,7 +1239,7 @@ function handleUI(request, apiKey) {
                     MODEL_IDS.push(model.id);
                 });
                 
-                updateModelSelect();
+                updateProvider();
                 
                 const freeCount = data.data.filter(m => m.isFree).length;
                 const totalCount = data.data.length;
@@ -1203,21 +1259,57 @@ function handleUI(request, apiKey) {
             }
         }
         
+        function updateProvider() {
+            CURRENT_PROVIDER = document.getElementById('provider').value;
+            updateProviderInfo();
+            updateModelSelect();
+        }
+        
+        function updateProviderInfo() {
+            const provider = PROVIDERS[CURRENT_PROVIDER];
+            const infoDiv = document.getElementById('provider-info');
+            
+            if (!provider) return;
+            
+            let filteredModels = MODEL_IDS;
+            if (CURRENT_PROVIDER !== 'all') {
+                filteredModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].provider === CURRENT_PROVIDER);
+            }
+            
+            const freeModels = filteredModels.filter(id => MODEL_CONFIGS[id].isFree).length;
+            const paidModels = filteredModels.length - freeModels;
+            
+            let html = `<strong>${provider.icon} ${provider.name}</strong><br>`;
+            html += `模型數: ${filteredModels.length}個 `;
+            if (freeModels > 0) html += `(${freeModels}個免費)`;
+            if (paidModels > 0) html += ` (${paidModels}個付費)`;
+            html += `<br>`;
+            html += `特點: ${provider.features.join(' · ')}`;
+            
+            infoDiv.innerHTML = html;
+        }
+        
         function updateModelSelect() {
             const modelSelect = document.getElementById('model');
             
+            // 按提供商過濾
+            let filteredModels = MODEL_IDS;
+            if (CURRENT_PROVIDER !== 'all') {
+                filteredModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].provider === CURRENT_PROVIDER);
+            }
+            
             // 按類別分組
-            const basicModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'basic');
-            const professionalModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'professional');
-            const specializedModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'specialized');
-            const experimentalModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'experimental');
-            const paidModels = MODEL_IDS.filter(id => !MODEL_CONFIGS[id].isFree);
+            const basicModels = filteredModels.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'basic');
+            const professionalModels = filteredModels.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'professional');
+            const specializedModels = filteredModels.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'specialized');
+            const experimentalModels = filteredModels.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'experimental');
+            const paidModels = filteredModels.filter(id => !MODEL_CONFIGS[id].isFree);
             
             let html = '';
             
             // 基礎免費模型
             if (basicModels.length > 0) {
-                html += '<optgroup label="🆓 基礎免費模型 (Pollinations)">';
+                html += '<optgroup label="🆓 基礎免費模型">';
                 basicModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
                     html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
@@ -1227,7 +1319,7 @@ function handleUI(request, apiKey) {
             
             // 專業免費模型
             if (professionalModels.length > 0) {
-                html += '<optgroup label="🌟 專業免費模型 (Pollinations Pro)">';
+                html += '<optgroup label="🌟 專業免費模型">';
                 professionalModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
                     html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
@@ -1237,7 +1329,7 @@ function handleUI(request, apiKey) {
             
             // 特化免費模型
             if (specializedModels.length > 0) {
-                html += '<optgroup label="🎯 特化免費模型 (Pollinations Specialized)">';
+                html += '<optgroup label="🎯 特化免費模型">';
                 specializedModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
                     html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
@@ -1247,7 +1339,7 @@ function handleUI(request, apiKey) {
             
             // 實驗免費模型
             if (experimentalModels.length > 0) {
-                html += '<optgroup label="✨ 實驗免費模型 (Pollinations Lab)">';
+                html += '<optgroup label="✨ 實驗免費模型">';
                 experimentalModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
                     html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
@@ -1257,13 +1349,17 @@ function handleUI(request, apiKey) {
             
             // 付費高端模型
             if (paidModels.length > 0) {
-                html += '<optgroup label="💎 付費高端模型 (Premium)">';
+                html += '<optgroup label="💎 付費高端模型">';
                 paidModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
                     const nsfwTag = config.supportsNSFW ? '' : ' [僅安全]';
                     html += `<option value="${id}">${config.displayName}${nsfwTag} - ${config.description} (${config.credits}學分)</option>`;
                 });
                 html += '</optgroup>';
+            }
+            
+            if (filteredModels.length === 0) {
+                html = '<option value="">沒有可用模型</option>';
             }
             
             modelSelect.innerHTML = html;
@@ -1317,15 +1413,22 @@ function handleUI(request, apiKey) {
             if (!modelConfig) return;
             
             const infoDiv = document.getElementById('model-info');
+            const providerInfo = PROVIDERS[modelConfig.provider];
             
+            let infoText = '';
             if (modelConfig.isFree) {
-                infoDiv.innerHTML = '✨ 完全免費 · 無需積分';
+                infoText = '✨ 完全免費 · 無需積分';
                 infoDiv.style.color = '#10b981';
             } else {
-                infoDiv.innerHTML = `💳 消耗 ${modelConfig.credits} 學分/張`;
+                infoText = `💳 消耗 ${modelConfig.credits} 學分/張`;
                 infoDiv.style.color = '#fbbf24';
             }
             
+            if (providerInfo) {
+                infoText += ` · ${providerInfo.icon} ${providerInfo.name}`;
+            }
+            
+            infoDiv.innerHTML = infoText;
             updateImageOptions();
         }
 
@@ -1397,6 +1500,7 @@ function handleUI(request, apiKey) {
             if (!modelConfig) return alert('模型配置錯誤');
             
             const styleConfig = STYLES[style];
+            const providerInfo = PROVIDERS[modelConfig.provider] || {};
             const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
             const costText = modelConfig.isFree ? '免費' : `${modelConfig.credits * numImages}學分`;
             
@@ -1408,7 +1512,7 @@ function handleUI(request, apiKey) {
             
             if(btn) { btn.disabled = true; btn.innerText = `生成 ${numImages} 張中...`; }
             if(spinner) spinner.style.display = 'inline-block';
-            if(status) status.innerText = `正在使用 ${modelConfig.displayName} (${styleConfig.name}, ${modeText}, ${costText})...`;
+            if(status) status.innerText = `正在使用 ${modelConfig.displayName} (${providerInfo.icon} ${providerInfo.name}, ${styleConfig.name}, ${modeText}, ${costText})...`;
             if(container) container.innerHTML = '<div class="spinner" style="display:block"></div>';
 
             const startTime = Date.now();
@@ -1425,7 +1529,7 @@ function handleUI(request, apiKey) {
                     style: style
                 };
 
-                appendLog("System", `Model: ${modelConfig.displayName} | Style: ${styleConfig.name} | Provider: ${modelConfig.provider} | Free: ${modelConfig.isFree}`);
+                appendLog("System", `Provider: ${providerInfo.name} | Model: ${modelConfig.displayName} | Style: ${styleConfig.name} | Free: ${modelConfig.isFree}`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
@@ -1474,14 +1578,14 @@ function handleUI(request, apiKey) {
                     const gridHtml = imageUrls.map((url, idx) => 
                         `<div class="image-item">
                             <img src="${url}" class="result-img" onclick="window.open(this.src)">
-                            <div class="image-label">圖片 ${idx + 1} / ${imageUrls.length} · ${styleConfig.name}</div>
+                            <div class="image-label">圖片 ${idx + 1} / ${imageUrls.length} · ${providerInfo.icon} ${providerInfo.name} · ${styleConfig.name}</div>
                         </div>`
                     ).join('');
                     
                     if(container) container.innerHTML = `<div class="image-grid">${gridHtml}</div>`;
-                    if(status) status.innerText = `✅ ${modelConfig.displayName} (${styleConfig.name}, ${modeText}) 成功生成 ${imageUrls.length} 張 | ${costText}`;
+                    if(status) status.innerText = `✅ ${modelConfig.displayName} (${providerInfo.icon} ${providerInfo.name}, ${styleConfig.name}, ${modeText}) 成功生成 ${imageUrls.length} 張 | ${costText}`;
                     if(timeText) timeText.innerText = `耗時: ${((Date.now()-startTime)/1000).toFixed(2)}s`;
-                    appendLog("Success", `Generated ${imageUrls.length} images with ${styleConfig.name} style`);
+                    appendLog("Success", `Generated ${imageUrls.length} images via ${providerInfo.name} with ${styleConfig.name} style`);
                 } else {
                     throw new Error("無法提取圖片 URL");
                 }
