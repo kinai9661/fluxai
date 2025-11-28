@@ -1,28 +1,28 @@
 // =================================================================================
 //  項目: ai-generator-2api (Cloudflare Worker 單文件版)
-//  版本: 2.8.0 (代號: Pollinations Freedom Edition)
+//  版本: 2.9.0 (代號: Auto-Sync Edition)
 //  作者: 首席AI執行官
 //  日期: 2025-11-28
 //
-//  [v2.8.0 變更日誌]
-//  1. [新增] Pollinations.ai 免費 API 支持
-//  2. [新增] 3 個 Pollinations 模型: flux, turbo, flux-realism
-//  3. [增強] 雙 provider 路由系統 (付費/免費)
-//  4. [優化] Pollinations 模型無需積分扣除
+//  [v2.9.0 變更日誌]
+//  1. [新增] 自動更新模型列表功能
+//  2. [新增] /v1/models/refresh 端點
+//  3. [增強] 從上游動態獲取可用模型
+//  4. [優化] 模型緩存機制
 //  5. [保留] 所有現有功能完整支持
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.8.0",
+  PROJECT_VERSION: "2.9.0",
   
   API_MASTER_KEY: "1", 
   
   UPSTREAM_ORIGIN: "https://ai-image-generator.co",
   POLLINATIONS_ORIGIN: "https://image.pollinations.ai",
   
-  // 內容安全配置
+  // 安全配置
   SAFETY_CONFIG: {
     enableNSFW: true,
     requireAgeVerification: true,
@@ -30,30 +30,17 @@ const CONFIG = {
     logNSFWRequests: true,
   },
   
-  MODELS: [
-    // Pollinations 免費模型
-    "pollinations-flux",
-    "pollinations-turbo",
-    "pollinations-flux-realism",
-    // 原有付費模型
-    "flux-schnell",
-    "flux-dev",
-    "flux-pro",
-    "flux-1.1-pro",
-    "stable-diffusion-xl",
-    "stable-diffusion-3",
-    "dall-e-3"
-  ],
+  // 模型緩存配置
+  MODEL_CACHE_TTL: 3600, // 1小時緩存
+  AUTO_REFRESH_MODELS: true, // 自動刷新模型
   
-  DEFAULT_MODEL: "pollinations-flux",
-  
-  MODEL_CONFIGS: {
-    // === Pollinations.ai 免費模型 ===
+  // 靜態配置的 Pollinations 免費模型
+  POLLINATIONS_MODELS: {
     "pollinations-flux": {
       displayName: "Pollinations Flux",
       provider: "pollinations",
       upstreamModel: "flux",
-      credits: 0,  // 完全免費!
+      credits: 0,
       speed: "fast",
       quality: "excellent",
       description: "免費 Flux 模型,高質量快速生成",
@@ -84,90 +71,25 @@ const CONFIG = {
       maxImages: 4,
       supportsNSFW: true,
       isFree: true
-    },
-    // === 原有付費模型 ===
-    "flux-schnell": {
-      displayName: "Flux Schnell",
-      provider: "replicate",
-      credits: 1,
-      speed: "fast",
-      quality: "good",
-      description: "快速生成,適合快速迭代",
-      maxImages: 4,
-      supportsNSFW: true,
-      isFree: false
-    },
-    "flux-dev": {
-      displayName: "Flux Dev",
-      provider: "replicate",
-      credits: 2,
-      speed: "medium",
-      quality: "excellent",
-      description: "開發版本,高質量輸出",
-      maxImages: 4,
-      supportsNSFW: true,
-      isFree: false
-    },
-    "flux-pro": {
-      displayName: "Flux Pro",
-      provider: "replicate",
-      credits: 5,
-      speed: "slow",
-      quality: "best",
-      description: "專業版本,最高質量(僅單張)",
-      maxImages: 1,
-      supportsNSFW: true,
-      isFree: false
-    },
-    "flux-1.1-pro": {
-      displayName: "Flux 1.1 Pro",
-      provider: "replicate",
-      credits: 6,
-      speed: "slow",
-      quality: "best",
-      description: "2025最新版本(僅單張)",
-      maxImages: 1,
-      supportsNSFW: true,
-      isFree: false
-    },
-    "stable-diffusion-xl": {
-      displayName: "Stable Diffusion XL",
-      provider: "stability",
-      credits: 2,
-      speed: "medium",
-      quality: "excellent",
-      description: "開源經典模型",
-      maxImages: 4,
-      supportsNSFW: true,
-      isFree: false
-    },
-    "stable-diffusion-3": {
-      displayName: "Stable Diffusion 3",
-      provider: "stability",
-      credits: 3,
-      speed: "medium",
-      quality: "excellent",
-      description: "SD3 最新版本",
-      maxImages: 4,
-      supportsNSFW: true,
-      isFree: false
-    },
-    "dall-e-3": {
-      displayName: "DALL-E 3",
-      provider: "openai",
-      credits: 4,
-      speed: "medium",
-      quality: "excellent",
-      description: "OpenAI 官方模型(僅單張)",
-      maxImages: 1,
-      supportsNSFW: false,
-      isFree: false
     }
+  },
+  
+  // 上游服務模型的默認配置
+  UPSTREAM_MODEL_DEFAULTS: {
+    maxImages: 4,
+    supportsNSFW: true,
+    isFree: false,
+    speed: "medium",
+    quality: "excellent"
   },
   
   MAX_IMAGES: 4,
   DEFAULT_NUM_IMAGES: 1,
 };
+
+// 全局模型緩存
+let CACHED_MODELS = null;
+let CACHE_TIMESTAMP = 0;
 
 // --- [第二部分: Worker 入口路由] ---
 export default {
@@ -181,6 +103,7 @@ export default {
     if (url.pathname === '/v1/chat/completions') return handleChatCompletions(request, apiKey);
     if (url.pathname === '/v1/images/generations') return handleImageGenerations(request, apiKey);
     if (url.pathname === '/v1/models') return handleModelsRequest();
+    if (url.pathname === '/v1/models/refresh') return handleModelsRefresh(request, apiKey); // NEW
     
     return createErrorResponse(`Endpoint not found: ${url.pathname}`, 404, 'not_found');
   }
@@ -228,13 +151,153 @@ function getFakeHeaders(fingerprint, anonUserId) {
     };
 }
 
-function getModelConfig(model) {
-    return CONFIG.MODEL_CONFIGS[model] || CONFIG.MODEL_CONFIGS[CONFIG.DEFAULT_MODEL];
+/**
+ * 從上游服務獲取模型列表
+ */
+async function fetchUpstreamModels() {
+    try {
+        const fingerprint = generateFingerprint();
+        const anonUserId = crypto.randomUUID();
+        const { headers } = getFakeHeaders(fingerprint, anonUserId);
+        
+        console.log('[Model Sync] Fetching models from upstream...');
+        
+        const response = await fetch(`${CONFIG.UPSTREAM_ORIGIN}/api/models`, {
+            method: 'GET',
+            headers: headers
+        });
+        
+        if (!response.ok) {
+            console.log('[Model Sync] Upstream returned:', response.status);
+            return null;
+        }
+        
+        const data = await response.json();
+        console.log('[Model Sync] Received models:', data);
+        
+        if (data && Array.isArray(data.models)) {
+            return data.models;
+        }
+        
+        return null;
+    } catch (e) {
+        console.log('[Model Sync] Error:', e.message);
+        return null;
+    }
 }
 
 /**
- * 轉換比例格式給 Pollinations
+ * 轉換上游模型為內部格式
  */
+function convertUpstreamModel(upstreamModel) {
+    const modelId = upstreamModel.id || upstreamModel.name;
+    const provider = upstreamModel.provider || "replicate";
+    
+    return {
+        displayName: upstreamModel.displayName || upstreamModel.name || modelId,
+        provider: provider,
+        credits: upstreamModel.credits || 2,
+        speed: upstreamModel.speed || CONFIG.UPSTREAM_MODEL_DEFAULTS.speed,
+        quality: upstreamModel.quality || CONFIG.UPSTREAM_MODEL_DEFAULTS.quality,
+        description: upstreamModel.description || "AI 圖像生成模型",
+        maxImages: upstreamModel.maxImages || CONFIG.UPSTREAM_MODEL_DEFAULTS.maxImages,
+        supportsNSFW: upstreamModel.supportsNSFW !== false,
+        isFree: false,
+        lastUpdated: new Date().toISOString()
+    };
+}
+
+/**
+ * 獲取所有模型(含緩存)
+ */
+async function getAllModels() {
+    const now = Date.now();
+    
+    // 檢查緩存
+    if (CACHED_MODELS && (now - CACHE_TIMESTAMP) < CONFIG.MODEL_CACHE_TTL * 1000) {
+        return CACHED_MODELS;
+    }
+    
+    // 嘗試從上游獲取
+    const upstreamModels = await fetchUpstreamModels();
+    
+    // 合併 Pollinations 免費模型和上游模型
+    const allModels = { ...CONFIG.POLLINATIONS_MODELS };
+    
+    if (upstreamModels && upstreamModels.length > 0) {
+        upstreamModels.forEach(model => {
+            const modelId = model.id || model.name;
+            if (modelId && !allModels[modelId]) {
+                allModels[modelId] = convertUpstreamModel(model);
+            }
+        });
+        
+        console.log(`[Model Sync] Synced ${upstreamModels.length} upstream models`);
+    } else {
+        // 如果上游獲取失敗,使用備用靜態配置
+        console.log('[Model Sync] Using fallback static models');
+        Object.assign(allModels, {
+            "flux-schnell": {
+                displayName: "Flux Schnell",
+                provider: "replicate",
+                credits: 1,
+                speed: "fast",
+                quality: "good",
+                description: "快速生成,適合快速迭代",
+                maxImages: 4,
+                supportsNSFW: true,
+                isFree: false
+            },
+            "flux-dev": {
+                displayName: "Flux Dev",
+                provider: "replicate",
+                credits: 2,
+                speed: "medium",
+                quality: "excellent",
+                description: "開發版本,高質量輸出",
+                maxImages: 4,
+                supportsNSFW: true,
+                isFree: false
+            },
+            "flux-pro": {
+                displayName: "Flux Pro",
+                provider: "replicate",
+                credits: 5,
+                speed: "slow",
+                quality: "best",
+                description: "專業版本,最高質量(僅單張)",
+                maxImages: 1,
+                supportsNSFW: true,
+                isFree: false
+            },
+            "stable-diffusion-xl": {
+                displayName: "Stable Diffusion XL",
+                provider: "stability",
+                credits: 2,
+                speed: "medium",
+                quality: "excellent",
+                description: "開源經典模型",
+                maxImages: 4,
+                supportsNSFW: true,
+                isFree: false
+            }
+        });
+    }
+    
+    CACHED_MODELS = allModels;
+    CACHE_TIMESTAMP = now;
+    
+    return allModels;
+}
+
+function getModelConfig(model) {
+    if (CACHED_MODELS && CACHED_MODELS[model]) {
+        return CACHED_MODELS[model];
+    }
+    // 回退到 Pollinations 免費模型
+    return CONFIG.POLLINATIONS_MODELS[model] || CONFIG.POLLINATIONS_MODELS["pollinations-flux"];
+}
+
 function convertAspectRatioForPollinations(aspectRatio) {
     const ratioMap = {
         "1:1": { width: 1024, height: 1024 },
@@ -246,9 +309,6 @@ function convertAspectRatioForPollinations(aspectRatio) {
     return ratioMap[aspectRatio] || { width: 1024, height: 1024 };
 }
 
-/**
- * Pollinations.ai 圖片生成
- */
 async function performPollinationsGeneration(prompt, model, aspectRatio, logger, index = 0, safeMode = true) {
     const modelConfig = getModelConfig(model);
     const logPrefix = index > 0 ? `[Image ${index+1}]` : "";
@@ -263,7 +323,6 @@ async function performPollinationsGeneration(prompt, model, aspectRatio, logger,
         isFree: true
     });
 
-    // 構建 URL 參數
     const params = new URLSearchParams({
         model: modelConfig.upstreamModel,
         width: dimensions.width.toString(),
@@ -273,20 +332,13 @@ async function performPollinationsGeneration(prompt, model, aspectRatio, logger,
         nofeed: "true"
     });
     
-    // Pollinations.ai 的 GET 請求格式
     const imageUrl = `${CONFIG.POLLINATIONS_ORIGIN}/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
-    
     logger.add(`${logPrefix}Pollinations URL`, imageUrl);
     
     try {
-        // 驗證圖片是否可訪問
         const response = await fetch(imageUrl, { method: 'HEAD' });
-        
         if (response.ok) {
-            logger.add(`${logPrefix}Pollinations Success`, {
-                status: response.status,
-                url: imageUrl
-            });
+            logger.add(`${logPrefix}Pollinations Success`, { status: response.status, url: imageUrl });
             return imageUrl;
         } else {
             throw new Error(`Pollinations returned ${response.status}`);
@@ -297,9 +349,6 @@ async function performPollinationsGeneration(prompt, model, aspectRatio, logger,
     }
 }
 
-/**
- * 上游付費服務生成
- */
 async function performUpstreamGeneration(prompt, model, aspectRatio, logger, index = 0, safeMode = true) {
     const fingerprint = generateFingerprint();
     const anonUserId = crypto.randomUUID(); 
@@ -334,11 +383,7 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
         const deductText = await deductRes.text();
         let deductJson;
         try { deductJson = JSON.parse(deductText); } catch(e) { deductJson = deductText; }
-        
-        logger.add(`${logPrefix}Deduct Response`, { 
-            status: deductRes.status, 
-            body: deductJson 
-        });
+        logger.add(`${logPrefix}Deduct Response`, { status: deductRes.status, body: deductJson });
     } catch (e) {
         logger.add(`${logPrefix}Deduct Error`, e.message);
     }
@@ -348,15 +393,8 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
     formData.append("model", model);
     formData.append("num_outputs", "1");
     formData.append("inputMode", "text");
-    
-    if (safeMode) {
-        formData.append("style", "auto");
-        formData.append("safe_mode", "true");
-    } else {
-        formData.append("style", "none");
-        formData.append("safe_mode", "false");
-    }
-    
+    formData.append("style", safeMode ? "auto" : "none");
+    formData.append("safe_mode", safeMode ? "true" : "false");
     formData.append("aspectRatio", aspectRatio || "1:1");
     formData.append("fingerprint_id", fingerprint);
     formData.append("provider", modelConfig.provider);
@@ -399,9 +437,6 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
     }
 }
 
-/**
- * 批量生成多張圖片(智能路由)
- */
 async function performBatchGeneration(prompt, model, aspectRatio, numImages, logger, safeMode = true) {
     const modelConfig = getModelConfig(model);
     const modelMaxImages = modelConfig.maxImages || 1;
@@ -428,7 +463,6 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
 
     const promises = [];
     for (let i = 0; i < count; i++) {
-        // 根據 provider 選擇生成函數
         if (modelConfig.provider === "pollinations") {
             promises.push(
                 performPollinationsGeneration(prompt, model, aspectRatio, logger, i, safeMode)
@@ -481,8 +515,10 @@ async function handleChatCompletions(request, apiKey) {
             }
         }
 
-        const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
-        const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
+        // 獲取最新模型配置
+        const allModels = await getAllModels();
+        const requestedModel = body.model || "pollinations-flux";
+        const model = allModels[requestedModel] ? requestedModel : "pollinations-flux";
         const modelConfig = getModelConfig(model);
         const safeMode = body.safe_mode !== false;
         
@@ -498,11 +534,7 @@ async function handleChatCompletions(request, apiKey) {
             });
         }
         
-        const numImages = Math.min(
-            Math.max(1, body.n || body.num_images || CONFIG.DEFAULT_NUM_IMAGES), 
-            CONFIG.MAX_IMAGES
-        );
-        
+        const numImages = Math.min(Math.max(1, body.n || CONFIG.DEFAULT_NUM_IMAGES), CONFIG.MAX_IMAGES);
         const aspectRatio = body.aspect_ratio || body.size || "1:1";
         let finalAspectRatio = "1:1";
         if (aspectRatio === "1024x1792" || aspectRatio === "9:16") finalAspectRatio = "9:16";
@@ -527,7 +559,6 @@ async function handleChatCompletions(request, apiKey) {
                 if (isWebUI) {
                     await writer.write(encoder.encode(`data: ${JSON.stringify({ debug: logger.get() })}\n\n`));
                 }
-
                 const chunk = {
                     id: respId, 
                     object: 'chat.completion.chunk', 
@@ -536,7 +567,6 @@ async function handleChatCompletions(request, apiKey) {
                     choices: [{ index: 0, delta: { content: respContent }, finish_reason: null }]
                 };
                 await writer.write(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-                
                 const endChunk = {
                     id: respId, 
                     object: 'chat.completion.chunk', 
@@ -558,14 +588,9 @@ async function handleChatCompletions(request, apiKey) {
                 object: "chat.completion",
                 created: Math.floor(Date.now() / 1000),
                 model: model,
-                choices: [{
-                    index: 0,
-                    message: { role: "assistant", content: respContent },
-                    finish_reason: "stop"
-                }]
+                choices: [{ index: 0, message: { role: "assistant", content: respContent }, finish_reason: "stop" }]
             }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
         }
-
     } catch (e) {
         logger.add("Fatal Error", e.message);
         return createErrorResponse(e.message, 500, 'generation_failed');
@@ -579,8 +604,9 @@ async function handleImageGenerations(request, apiKey) {
     try {
         const body = await request.json();
         const prompt = body.prompt;
-        const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
-        const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
+        const allModels = await getAllModels();
+        const requestedModel = body.model || "pollinations-flux";
+        const model = allModels[requestedModel] ? requestedModel : "pollinations-flux";
         const modelConfig = getModelConfig(model);
         const safeMode = body.safe_mode !== false;
         
@@ -600,7 +626,6 @@ async function handleImageGenerations(request, apiKey) {
             created: Math.floor(Date.now() / 1000),
             data: imageUrls.map(url => ({ url }))
         }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
-
     } catch (e) {
         return createErrorResponse(e.message, 500, 'generation_failed');
     }
@@ -633,17 +658,58 @@ function corsHeaders(headers = {}) {
     };
 }
 
-function handleModelsRequest() {
+async function handleModelsRequest() {
+    const allModels = await getAllModels();
+    const modelIds = Object.keys(allModels);
+    
+    const cacheAge = CACHE_TIMESTAMP > 0 ? Math.floor((Date.now() - CACHE_TIMESTAMP) / 1000) : 0;
+    
     return new Response(JSON.stringify({
         object: 'list',
-        data: CONFIG.MODELS.map(id => ({
+        data: modelIds.map(id => ({
             id,
             object: 'model',
             created: Date.now(),
             owned_by: 'ai-generator',
-            ...CONFIG.MODEL_CONFIGS[id]
-        }))
+            ...allModels[id]
+        })),
+        cache_info: {
+            cached: CACHED_MODELS !== null,
+            age_seconds: cacheAge,
+            ttl_seconds: CONFIG.MODEL_CACHE_TTL,
+            last_updated: CACHE_TIMESTAMP > 0 ? new Date(CACHE_TIMESTAMP).toISOString() : null
+        }
     }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
+}
+
+/**
+ * 手動刷新模型列表
+ */
+async function handleModelsRefresh(request, apiKey) {
+    if (!verifyAuth(request, apiKey)) return createErrorResponse('Unauthorized', 401, 'unauthorized');
+    
+    try {
+        // 清除緩存
+        CACHED_MODELS = null;
+        CACHE_TIMESTAMP = 0;
+        
+        // 重新獲取
+        const allModels = await getAllModels();
+        const modelCount = Object.keys(allModels).length;
+        const freeCount = Object.values(allModels).filter(m => m.isFree).length;
+        
+        return new Response(JSON.stringify({
+            success: true,
+            message: "Models refreshed successfully",
+            total_models: modelCount,
+            free_models: freeCount,
+            paid_models: modelCount - freeCount,
+            timestamp: new Date().toISOString(),
+            models: Object.keys(allModels)
+        }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
+    } catch (e) {
+        return createErrorResponse(e.message, 500, 'refresh_failed');
+    }
 }
 
 function handleAgeVerification(request) {
@@ -727,27 +793,6 @@ function handleUI(request, apiKey) {
     return new Response(null, { status: 302, headers: { 'Location': '/age-verify' } });
   }
   
-  // 按 provider 分組模型選項
-  const freeModels = CONFIG.MODELS.filter(id => CONFIG.MODEL_CONFIGS[id].isFree);
-  const paidModels = CONFIG.MODELS.filter(id => !CONFIG.MODEL_CONFIGS[id].isFree);
-  
-  const modelOptionsHTML = `
-    <optgroup label="🆓 免費模型 (Pollinations.ai)">
-      ${freeModels.map(id => {
-        const config = CONFIG.MODEL_CONFIGS[id];
-        const isDefault = id === CONFIG.DEFAULT_MODEL;
-        return `<option value="${id}" ${isDefault ? 'selected' : ''}>${config.displayName} - ${config.description}</option>`;
-      }).join('\n')}
-    </optgroup>
-    <optgroup label="💎 付費模型 (Premium)">
-      ${paidModels.map(id => {
-        const config = CONFIG.MODEL_CONFIGS[id];
-        const nsfwTag = config.supportsNSFW ? '' : ' [僅安全]';
-        return `<option value="${id}">${config.displayName}${nsfwTag} - ${config.description} (${config.credits}學分)</option>`;
-      }).join('\n')}
-    </optgroup>
-  `;
-  
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -761,7 +806,7 @@ function handleUI(request, apiKey) {
       .main { flex: 1; display: flex; flex-direction: column; padding: 24px; background-color: #000; }
       h2 { margin-top: 0; font-size: 20px; color: #fff; display: flex; align-items: center; gap: 10px; }
       .badge { background: var(--primary); color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-      .badge-free { background: var(--success); color: #fff; }
+      .badge-free { background: var(--success); }
       .box { background: #27272a; padding: 16px; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 20px; }
       .warning-box { background: #7f1d1d; border-color: #991b1b; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #fecaca; }
       .info-box { background: #064e3b; border: 1px solid #059669; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #6ee7b7; }
@@ -776,6 +821,7 @@ function handleUI(request, apiKey) {
       button { width: 100%; padding: 12px; background: var(--primary); border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #000; font-size: 14px; transition: 0.2s; }
       button:hover { filter: brightness(1.1); }
       button:disabled { background: #3f3f46; color: #71717a; cursor: not-allowed; }
+      .btn-refresh { background: var(--accent); font-size: 12px; padding: 8px; margin-top: 10px; }
       .result-area { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; background: radial-gradient(circle, #1a1a1a, #000); border-radius: 12px; border: 1px solid var(--border); padding: 20px; }
       .result-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.7); cursor: pointer; transition: transform 0.3s; }
       .result-img:hover { transform: scale(1.02); }
@@ -798,7 +844,8 @@ function handleUI(request, apiKey) {
         
         <div class="info-box">
             🆓 <strong>新增免費模型!</strong><br>
-            Pollinations.ai 提供完全免費的 AI 生成服務
+            Pollinations.ai 提供完全免費的 AI 生成服務<br>
+            <span id="model-count" style="font-size: 11px; opacity: 0.8;">載入模型中...</span>
         </div>
         
         <div class="warning-box">
@@ -819,9 +866,10 @@ function handleUI(request, apiKey) {
         <div class="box">
             <span class="label">🤖 AI 模型</span>
             <select id="model" onchange="updateModelInfo()">
-                ${modelOptionsHTML}
+                <option value="pollinations-flux" selected>載入中...</option>
             </select>
-            <div id="model-info" style="font-size: 11px; color: #10b981; margin-top: -8px; margin-bottom: 12px;"></div>
+            <button class="btn-refresh" onclick="refreshModels()">🔄 刷新模型列表</button>
+            <div id="model-info" style="font-size: 11px; color: #10b981; margin-top: 8px;"></div>
             
             <span class="label">🖼️ 生成數量</span>
             <select id="num-images">
@@ -858,13 +906,13 @@ function handleUI(request, apiKey) {
         <div class="result-area" id="result-container">
             <div style="color:#3f3f46; text-align:center;">
                 <p style="font-size: 16px;">📸 圖片預覽區域</p>
-                <p style="font-size: 12px;">支持 ${CONFIG.MODELS.length} 個 AI 模型 · 包含 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
+                <p style="font-size: 12px;">支持多個 AI 模型 · 包含 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
                 <div class="spinner" id="spinner"></div>
             </div>
         </div>
         
         <div class="status-bar">
-            <span id="status-text">系統就緒 · ${CONFIG.MODELS.length} 個模型可用 (含 ${freeModels.length} 個免費)</span>
+            <span id="status-text">系統就緒 · 載入模型中...</span>
             <span id="time-text"></span>
         </div>
 
@@ -876,13 +924,117 @@ function handleUI(request, apiKey) {
     <script>
         const API_KEY = "${apiKey}";
         const ENDPOINT = "${origin}/v1/chat/completions";
-        const MODEL_CONFIGS = ${JSON.stringify(CONFIG.MODEL_CONFIGS)};
+        const MODELS_ENDPOINT = "${origin}/v1/models";
+        const REFRESH_ENDPOINT = "${origin}/v1/models/refresh";
+        
+        let MODEL_CONFIGS = {};
+        let MODEL_IDS = [];
 
         function copy(text) { navigator.clipboard.writeText(text); alert('已複製'); }
+
+        // 載入模型列表
+        async function loadModels() {
+            try {
+                const res = await fetch(MODELS_ENDPOINT);
+                const data = await res.json();
+                
+                MODEL_CONFIGS = {};
+                MODEL_IDS = [];
+                
+                data.data.forEach(model => {
+                    MODEL_CONFIGS[model.id] = model;
+                    MODEL_IDS.push(model.id);
+                });
+                
+                updateModelSelect();
+                
+                const freeCount = data.data.filter(m => m.isFree).length;
+                const totalCount = data.data.length;
+                document.getElementById('model-count').innerText = \`載入 \${totalCount} 個模型 (\${freeCount} 個免費)\`;
+                
+                const cacheInfo = data.cache_info;
+                let statusText = \`系統就緒 · \${totalCount} 個模型可用 (\${freeCount} 個免費)\`;
+                if (cacheInfo && cacheInfo.last_updated) {
+                    const updateTime = new Date(cacheInfo.last_updated).toLocaleTimeString();
+                    statusText += \` · 更新於 \${updateTime}\`;
+                }
+                document.getElementById('status-text').innerText = statusText;
+                
+                appendLog("Models Loaded", \`Total: \${totalCount}, Free: \${freeCount}\`);
+            } catch (e) {
+                console.error('Failed to load models:', e);
+                appendLog("Error", "Failed to load models: " + e.message);
+            }
+        }
+        
+        // 更新模型下拉選單
+        function updateModelSelect() {
+            const modelSelect = document.getElementById('model');
+            const freeModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree);
+            const paidModels = MODEL_IDS.filter(id => !MODEL_CONFIGS[id].isFree);
+            
+            let html = '';
+            
+            if (freeModels.length > 0) {
+                html += '<optgroup label="🆓 免費模型 (Pollinations.ai)">';
+                freeModels.forEach(id => {
+                    const config = MODEL_CONFIGS[id];
+                    html += \`<option value="\${id}">\${config.displayName} - \${config.description}</option>\`;
+                });
+                html += '</optgroup>';
+            }
+            
+            if (paidModels.length > 0) {
+                html += '<optgroup label="💎 付費模型 (Premium)">';
+                paidModels.forEach(id => {
+                    const config = MODEL_CONFIGS[id];
+                    const nsfwTag = config.supportsNSFW ? '' : ' [僅安全]';
+                    html += \`<option value="\${id}">\${config.displayName}\${nsfwTag} - \${config.description} (\${config.credits}學分)</option>\`;
+                });
+                html += '</optgroup>';
+            }
+            
+            modelSelect.innerHTML = html;
+            updateModelInfo();
+        }
+        
+        // 刷新模型列表
+        async function refreshModels() {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerText = '🔄 刷新中...';
+            
+            try {
+                appendLog("System", "Refreshing models from upstream...");
+                
+                const res = await fetch(REFRESH_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + API_KEY }
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    appendLog("Model Refresh", data);
+                    alert(\`模型更新成功!\n總計: \${data.total_models}\n免費: \${data.free_models}\n付費: \${data.paid_models}\`);
+                    await loadModels();
+                } else {
+                    throw new Error(data.message || 'Refresh failed');
+                }
+            } catch (e) {
+                appendLog("Error", "Refresh failed: " + e.message);
+                alert('模型更新失敗: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '🔄 刷新模型列表';
+            }
+        }
 
         function updateModelInfo() {
             const model = document.getElementById('model').value;
             const modelConfig = MODEL_CONFIGS[model];
+            if (!modelConfig) return;
+            
             const infoDiv = document.getElementById('model-info');
             
             if (modelConfig.isFree) {
@@ -903,7 +1055,7 @@ function handleUI(request, apiKey) {
             const modelConfig = MODEL_CONFIGS[model];
             
             if (!safeMode) {
-                if (!modelConfig.supportsNSFW) {
+                if (!modelConfig || !modelConfig.supportsNSFW) {
                     alert('當前模型不支持關閉安全模式');
                     document.getElementById('safe-mode').checked = true;
                     return;
@@ -919,6 +1071,8 @@ function handleUI(request, apiKey) {
             const numImagesSelect = document.getElementById('num-images');
             const warning = document.getElementById('model-warning');
             const modelConfig = MODEL_CONFIGS[model];
+            if (!modelConfig) return;
+            
             const maxImages = modelConfig.maxImages || 4;
             
             numImagesSelect.innerHTML = '';
@@ -934,7 +1088,8 @@ function handleUI(request, apiKey) {
             updateSafeMode();
         }
         
-        updateModelInfo();
+        // 初始化載入模型
+        loadModels();
 
         function appendLog(step, data) {
             const logs = document.getElementById('logs');
@@ -957,6 +1112,8 @@ function handleUI(request, apiKey) {
             const aspectRatio = document.getElementById('ratio').value;
             const safeMode = document.getElementById('safe-mode').checked;
             const modelConfig = MODEL_CONFIGS[model];
+            if (!modelConfig) return alert('模型配置錯誤');
+            
             const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
             const costText = modelConfig.isFree ? '免費' : \`\${modelConfig.credits * numImages}學分\`;
             
@@ -984,7 +1141,7 @@ function handleUI(request, apiKey) {
                     safe_mode: safeMode
                 };
 
-                appendLog("System", \`Using \${modelConfig.displayName} | Provider: \${modelConfig.provider} | Free: \${modelConfig.isFree} | Mode: \${modeText}\`);
+                appendLog("System", \`Using \${modelConfig.displayName} | Provider: \${modelConfig.provider} | Free: \${modelConfig.isFree}\`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
