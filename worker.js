@@ -1,27 +1,25 @@
 // =================================================================================
 //  项目: ai-generator-2api (Cloudflare Worker 单文件版)
-//  版本: 2.6.0 (代号: Multi-Model Edition)
+//  版本: 2.6.1 (代号: Multi-Model Edition)
 //  作者: 首席AI执行官
 //  日期: 2025-11-28
 //
-//  [v2.6.0 变更日志]
-//  1. [新增] 支持多个 AI 模型: Flux 系列, Stable Diffusion, DALL-E
-//  2. [增强] 模型配置系统,自动路由到对应 provider
-//  3. [优化] Web UI 支持模型选择
-//  4. [保留] 多张图片生成功能
+//  [v2.6.1 变更日志]
+//  1. [修复] Flux Pro/1.1 Pro 模型限制为单张生成
+//  2. [修复] DALL-E 3 模型限制为单张生成
+//  3. [增强] Web UI 根据模型动态调整数量选项
+//  4. [优化] 添加模型限制提示信息
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.6.0",
+  PROJECT_VERSION: "2.6.1",
   
-  // ⚠️ 请在 Cloudflare 环境变量中设置 API_MASTER_KEY，或者修改此处
   API_MASTER_KEY: "1", 
   
   UPSTREAM_ORIGIN: "https://ai-image-generator.co",
   
-  // 多模型支持
   MODELS: [
     "flux-schnell",
     "flux-dev",
@@ -42,7 +40,8 @@ const CONFIG = {
       credits: 1,
       speed: "fast",
       quality: "good",
-      description: "快速生成,适合快速迭代"
+      description: "快速生成,适合快速迭代",
+      maxImages: 4  // 支持 1-4 张
     },
     "flux-dev": {
       displayName: "Flux Dev",
@@ -50,7 +49,8 @@ const CONFIG = {
       credits: 2,
       speed: "medium",
       quality: "excellent",
-      description: "开发版本,高质量输出"
+      description: "开发版本,高质量输出",
+      maxImages: 4  // 支持 1-4 张
     },
     "flux-pro": {
       displayName: "Flux Pro",
@@ -58,7 +58,8 @@ const CONFIG = {
       credits: 5,
       speed: "slow",
       quality: "best",
-      description: "专业版本,最高质量"
+      description: "专业版本,最高质量 (仅单张)",
+      maxImages: 1  // 仅支持单张
     },
     "flux-1.1-pro": {
       displayName: "Flux 1.1 Pro",
@@ -66,7 +67,8 @@ const CONFIG = {
       credits: 6,
       speed: "slow",
       quality: "best",
-      description: "2025最新版本,性能更强"
+      description: "2025最新版本 (仅单张)",
+      maxImages: 1  // 仅支持单张
     },
     "stable-diffusion-xl": {
       displayName: "Stable Diffusion XL",
@@ -74,7 +76,8 @@ const CONFIG = {
       credits: 2,
       speed: "medium",
       quality: "excellent",
-      description: "开源经典模型"
+      description: "开源经典模型",
+      maxImages: 4  // 支持 1-4 张
     },
     "stable-diffusion-3": {
       displayName: "Stable Diffusion 3",
@@ -82,7 +85,8 @@ const CONFIG = {
       credits: 3,
       speed: "medium",
       quality: "excellent",
-      description: "SD3 最新版本"
+      description: "SD3 最新版本",
+      maxImages: 4  // 支持 1-4 张
     },
     "dall-e-3": {
       displayName: "DALL-E 3",
@@ -90,11 +94,11 @@ const CONFIG = {
       credits: 4,
       speed: "medium",
       quality: "excellent",
-      description: "OpenAI 官方模型"
+      description: "OpenAI 官方模型 (仅单张)",
+      maxImages: 1  // 仅支持单张
     }
   },
   
-  // 多图生成配置
   MAX_IMAGES: 4,
   DEFAULT_NUM_IMAGES: 1,
 };
@@ -105,24 +109,19 @@ export default {
     const apiKey = env.API_MASTER_KEY || CONFIG.API_MASTER_KEY;
     const url = new URL(request.url);
     
-    // 1. CORS 预检
     if (request.method === 'OPTIONS') {
       return handleCorsPreflight();
     }
 
-    // 2. 开发者驾驶舱 (Web UI)
     if (url.pathname === '/') {
       return handleUI(request, apiKey);
     } 
-    // 3. 聊天接口
     else if (url.pathname === '/v1/chat/completions') {
       return handleChatCompletions(request, apiKey);
     } 
-    // 4. 绘图接口
     else if (url.pathname === '/v1/images/generations') {
       return handleImageGenerations(request, apiKey);
     }
-    // 5. 模型列表
     else if (url.pathname === '/v1/models') {
       return handleModelsRequest();
     } 
@@ -134,7 +133,6 @@ export default {
 
 // --- [第三部分: 核心业务逻辑] ---
 
-// 日志记录器类
 class Logger {
     constructor() { this.logs = []; }
     add(step, data) {
@@ -179,16 +177,10 @@ function getFakeHeaders(fingerprint, anonUserId) {
     };
 }
 
-/**
- * 根据模型获取配置
- */
 function getModelConfig(model) {
     return CONFIG.MODEL_CONFIGS[model] || CONFIG.MODEL_CONFIGS[CONFIG.DEFAULT_MODEL];
 }
 
-/**
- * 执行上游生成流程 (单张图片)
- */
 async function performUpstreamGeneration(prompt, model, aspectRatio, logger, index = 0) {
     const fingerprint = generateFingerprint();
     const anonUserId = crypto.randomUUID(); 
@@ -205,7 +197,6 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
         fakeIP: fakeIP
     });
 
-    // 扣费
     const deductPayload = {
         "trans_type": "image_generation",
         "credits": modelConfig.credits,
@@ -235,7 +226,6 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
         logger.add(`${logPrefix}Deduct Error`, e.message);
     }
 
-    // 生成
     const formData = new FormData();
     formData.append("prompt", prompt);
     formData.append("model", model);
@@ -286,15 +276,29 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
 }
 
 /**
- * 批量生成多张图片
+ * 批量生成多张图片 (根据模型限制)
  */
 async function performBatchGeneration(prompt, model, aspectRatio, numImages, logger) {
-    const count = Math.min(Math.max(1, numImages), CONFIG.MAX_IMAGES);
+    const modelConfig = getModelConfig(model);
+    const modelMaxImages = modelConfig.maxImages || 1;
+    
+    // 根据模型限制调整生成数量
+    const count = Math.min(Math.max(1, numImages), modelMaxImages, CONFIG.MAX_IMAGES);
+    
+    if (numImages > modelMaxImages) {
+        logger.add("Model Limitation", { 
+            requestedImages: numImages,
+            modelMaxImages: modelMaxImages,
+            model: model,
+            message: `${modelConfig.displayName} 最多支持 ${modelMaxImages} 张图片`
+        });
+    }
     
     logger.add("Batch Generation Start", { 
         requestedImages: numImages, 
         actualImages: count,
         model: model,
+        modelLimit: modelMaxImages,
         prompt: prompt.substring(0, 80) + "..."
     });
 
@@ -321,9 +325,6 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
     return successImages;
 }
 
-/**
- * 处理 Chat 接口
- */
 async function handleChatCompletions(request, apiKey) {
     const logger = new Logger();
     
@@ -349,7 +350,6 @@ async function handleChatCompletions(request, apiKey) {
             }
         }
 
-        // 支持模型选择
         const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
         const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
         
@@ -440,9 +440,6 @@ async function handleChatCompletions(request, apiKey) {
     }
 }
 
-/**
- * 处理 Image 接口
- */
 async function handleImageGenerations(request, apiKey) {
     const logger = new Logger();
     if (!verifyAuth(request, apiKey)) return createErrorResponse('Unauthorized', 401, 'unauthorized');
@@ -451,7 +448,6 @@ async function handleImageGenerations(request, apiKey) {
         const body = await request.json();
         const prompt = body.prompt;
         
-        // 支持模型选择
         const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
         const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
         
@@ -521,7 +517,6 @@ function handleModelsRequest() {
 function handleUI(request, apiKey) {
   const origin = new URL(request.url).origin;
   
-  // 生成模型选项 HTML
   const modelOptions = CONFIG.MODELS.map(modelId => {
     const config = CONFIG.MODEL_CONFIGS[modelId];
     const isDefault = modelId === CONFIG.DEFAULT_MODEL;
@@ -543,6 +538,7 @@ function handleUI(request, apiKey) {
       .badge { background: var(--primary); color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
       .box { background: #27272a; padding: 16px; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 20px; }
       .label { font-size: 12px; color: #a1a1aa; margin-bottom: 8px; display: block; font-weight: 600; }
+      .warning { font-size: 11px; color: #fbbf24; margin-top: -8px; margin-bottom: 12px; display: none; }
       .code-block { font-family: 'Consolas', monospace; font-size: 12px; color: var(--primary); background: #111; padding: 10px; border-radius: 6px; cursor: pointer; word-break: break-all; border: 1px solid #333; transition: 0.2s; }
       .code-block:hover { border-color: var(--primary); background: #1a1a1a; }
       input, select, textarea { width: 100%; background: #18181b; border: 1px solid #3f3f46; color: #fff; padding: 10px; border-radius: 6px; margin-bottom: 12px; box-sizing: border-box; transition: 0.2s; }
@@ -582,7 +578,7 @@ function handleUI(request, apiKey) {
 
         <div class="box">
             <span class="label">🤖 AI 模型</span>
-            <select id="model">
+            <select id="model" onchange="updateImageOptions()">
                 ${modelOptions}
             </select>
             
@@ -593,6 +589,7 @@ function handleUI(request, apiKey) {
                 <option value="3">3 张</option>
                 <option value="4">4 张</option>
             </select>
+            <div class="warning" id="model-warning">⚠️ 当前模型仅支持单张生成</div>
             
             <span class="label">📊 图片比例</span>
             <select id="ratio">
@@ -614,7 +611,7 @@ function handleUI(request, apiKey) {
         <div class="result-area" id="result-container">
             <div style="color:#3f3f46; text-align:center;">
                 <p style="font-size: 16px;">📸 图片预览区域</p>
-                <p style="font-size: 12px;">支持 ${CONFIG.MODELS.length} 个 AI 模型 · 最多生成 ${CONFIG.MAX_IMAGES} 张图片</p>
+                <p style="font-size: 12px;">支持 ${CONFIG.MODELS.length} 个 AI 模型 · 根据模型生成 1-4 张图片</p>
                 <div class="spinner" id="spinner"></div>
             </div>
         </div>
@@ -635,6 +632,34 @@ function handleUI(request, apiKey) {
         const MODEL_CONFIGS = ${JSON.stringify(CONFIG.MODEL_CONFIGS)};
 
         function copy(text) { navigator.clipboard.writeText(text); alert('已复制'); }
+
+        function updateImageOptions() {
+            const model = document.getElementById('model').value;
+            const numImagesSelect = document.getElementById('num-images');
+            const warning = document.getElementById('model-warning');
+            const modelConfig = MODEL_CONFIGS[model];
+            const maxImages = modelConfig.maxImages || 4;
+            
+            // 更新选项
+            numImagesSelect.innerHTML = '';
+            for (let i = 1; i <= maxImages; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.text = i + ' 张';
+                if (i === 1) option.selected = true;
+                numImagesSelect.appendChild(option);
+            }
+            
+            // 显示警告
+            if (maxImages === 1) {
+                warning.style.display = 'block';
+            } else {
+                warning.style.display = 'none';
+            }
+        }
+        
+        // 初始化
+        updateImageOptions();
 
         function appendLog(step, data) {
             const logs = document.getElementById('logs');
@@ -680,7 +705,7 @@ function handleUI(request, apiKey) {
                     aspect_ratio: aspectRatio
                 };
 
-                appendLog("System", \`Using model: \${modelConfig.displayName}\`);
+                appendLog("System", \`Using model: \${modelConfig.displayName} (max: \${modelConfig.maxImages} images)\`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
