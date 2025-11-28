@@ -1,38 +1,41 @@
 // =================================================================================
 //  項目: ai-generator-2api (Cloudflare Worker 單文件版)
-//  版本: 2.7.0 (代號: Artistic Freedom Edition)
+//  版本: 2.8.0 (代號: Pollinations Freedom Edition)
 //  作者: 首席AI執行官
 //  日期: 2025-11-28
 //
-//  [v2.7.0 變更日誌]
-//  1. [新增] 藝術創作模式 - 支持 NSFW 內容生成
-//  2. [安全] 年齡驗證和內容警告機制
-//  3. [合規] 詳細的使用條款和免責聲明
-//  4. [控制] 可配置的安全模式開關
-//
-//  ⚠️ 重要聲明:
-//  本工具僅用於合法的藝術創作目的。用戶需遵守當地法律法規。
-//  禁止生成任何涉及未成年人、非自願參與者或非法內容的圖像。
+//  [v2.8.0 變更日誌]
+//  1. [新增] Pollinations.ai 免費 API 支持
+//  2. [新增] 3 個 Pollinations 模型: flux, turbo, flux-realism
+//  3. [增強] 雙 provider 路由系統 (付費/免費)
+//  4. [優化] Pollinations 模型無需積分扣除
+//  5. [保留] 所有現有功能完整支持
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.7.0",
+  PROJECT_VERSION: "2.8.0",
   
   API_MASTER_KEY: "1", 
   
   UPSTREAM_ORIGIN: "https://ai-image-generator.co",
+  POLLINATIONS_ORIGIN: "https://image.pollinations.ai",
   
   // 內容安全配置
   SAFETY_CONFIG: {
-    enableNSFW: true,           // 是否允許 NSFW 內容
-    requireAgeVerification: true, // 是否需要年齡驗證
-    minAge: 18,                 // 最低年齡要求
-    logNSFWRequests: true,      // 記錄 NSFW 請求
+    enableNSFW: true,
+    requireAgeVerification: true,
+    minAge: 18,
+    logNSFWRequests: true,
   },
   
   MODELS: [
+    // Pollinations 免費模型
+    "pollinations-flux",
+    "pollinations-turbo",
+    "pollinations-flux-realism",
+    // 原有付費模型
     "flux-schnell",
     "flux-dev",
     "flux-pro",
@@ -42,9 +45,47 @@ const CONFIG = {
     "dall-e-3"
   ],
   
-  DEFAULT_MODEL: "flux-schnell",
+  DEFAULT_MODEL: "pollinations-flux",
   
   MODEL_CONFIGS: {
+    // === Pollinations.ai 免費模型 ===
+    "pollinations-flux": {
+      displayName: "Pollinations Flux",
+      provider: "pollinations",
+      upstreamModel: "flux",
+      credits: 0,  // 完全免費!
+      speed: "fast",
+      quality: "excellent",
+      description: "免費 Flux 模型,高質量快速生成",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true
+    },
+    "pollinations-turbo": {
+      displayName: "Pollinations Turbo",
+      provider: "pollinations",
+      upstreamModel: "turbo",
+      credits: 0,
+      speed: "very-fast",
+      quality: "good",
+      description: "免費超快速模型,適合快速迭代",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true
+    },
+    "pollinations-flux-realism": {
+      displayName: "Pollinations Flux Realism",
+      provider: "pollinations",
+      upstreamModel: "flux-realism",
+      credits: 0,
+      speed: "medium",
+      quality: "excellent",
+      description: "免費寫實風格模型,照片級質量",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true
+    },
+    // === 原有付費模型 ===
     "flux-schnell": {
       displayName: "Flux Schnell",
       provider: "replicate",
@@ -53,7 +94,8 @@ const CONFIG = {
       quality: "good",
       description: "快速生成,適合快速迭代",
       maxImages: 4,
-      supportsNSFW: true  // 支持 NSFW 內容
+      supportsNSFW: true,
+      isFree: false
     },
     "flux-dev": {
       displayName: "Flux Dev",
@@ -63,7 +105,8 @@ const CONFIG = {
       quality: "excellent",
       description: "開發版本,高質量輸出",
       maxImages: 4,
-      supportsNSFW: true
+      supportsNSFW: true,
+      isFree: false
     },
     "flux-pro": {
       displayName: "Flux Pro",
@@ -71,9 +114,10 @@ const CONFIG = {
       credits: 5,
       speed: "slow",
       quality: "best",
-      description: "專業版本,最高質量 (僅單張)",
+      description: "專業版本,最高質量(僅單張)",
       maxImages: 1,
-      supportsNSFW: true
+      supportsNSFW: true,
+      isFree: false
     },
     "flux-1.1-pro": {
       displayName: "Flux 1.1 Pro",
@@ -81,9 +125,10 @@ const CONFIG = {
       credits: 6,
       speed: "slow",
       quality: "best",
-      description: "2025最新版本 (僅單張)",
+      description: "2025最新版本(僅單張)",
       maxImages: 1,
-      supportsNSFW: true
+      supportsNSFW: true,
+      isFree: false
     },
     "stable-diffusion-xl": {
       displayName: "Stable Diffusion XL",
@@ -93,7 +138,8 @@ const CONFIG = {
       quality: "excellent",
       description: "開源經典模型",
       maxImages: 4,
-      supportsNSFW: true
+      supportsNSFW: true,
+      isFree: false
     },
     "stable-diffusion-3": {
       displayName: "Stable Diffusion 3",
@@ -103,7 +149,8 @@ const CONFIG = {
       quality: "excellent",
       description: "SD3 最新版本",
       maxImages: 4,
-      supportsNSFW: true
+      supportsNSFW: true,
+      isFree: false
     },
     "dall-e-3": {
       displayName: "DALL-E 3",
@@ -111,9 +158,10 @@ const CONFIG = {
       credits: 4,
       speed: "medium",
       quality: "excellent",
-      description: "OpenAI 官方模型 (僅單張)",
+      description: "OpenAI 官方模型(僅單張)",
       maxImages: 1,
-      supportsNSFW: false  // DALL-E 3 不支持 NSFW
+      supportsNSFW: false,
+      isFree: false
     }
   },
   
@@ -127,30 +175,14 @@ export default {
     const apiKey = env.API_MASTER_KEY || CONFIG.API_MASTER_KEY;
     const url = new URL(request.url);
     
-    if (request.method === 'OPTIONS') {
-      return handleCorsPreflight();
-    }
-
-    // 年齡驗證頁面
-    if (url.pathname === '/age-verify') {
-      return handleAgeVerification(request);
-    }
-
-    if (url.pathname === '/') {
-      return handleUI(request, apiKey);
-    } 
-    else if (url.pathname === '/v1/chat/completions') {
-      return handleChatCompletions(request, apiKey);
-    } 
-    else if (url.pathname === '/v1/images/generations') {
-      return handleImageGenerations(request, apiKey);
-    }
-    else if (url.pathname === '/v1/models') {
-      return handleModelsRequest();
-    } 
-    else {
-      return createErrorResponse(`Endpoint not found: ${url.pathname}`, 404, 'not_found');
-    }
+    if (request.method === 'OPTIONS') return handleCorsPreflight();
+    if (url.pathname === '/age-verify') return handleAgeVerification(request);
+    if (url.pathname === '/') return handleUI(request, apiKey);
+    if (url.pathname === '/v1/chat/completions') return handleChatCompletions(request, apiKey);
+    if (url.pathname === '/v1/images/generations') return handleImageGenerations(request, apiKey);
+    if (url.pathname === '/v1/models') return handleModelsRequest();
+    
+    return createErrorResponse(`Endpoint not found: ${url.pathname}`, 404, 'not_found');
   }
 };
 
@@ -169,9 +201,7 @@ class Logger {
 function generateFingerprint() {
     const chars = '0123456789abcdef';
     let result = '';
-    for (let i = 0; i < 32; i++) {
-        result += chars[Math.floor(Math.random() * 16)];
-    }
+    for (let i = 0; i < 32; i++) result += chars[Math.floor(Math.random() * 16)];
     return result;
 }
 
@@ -188,12 +218,10 @@ function getFakeHeaders(fingerprint, anonUserId) {
             "content-type": "application/json",
             "origin": CONFIG.UPSTREAM_ORIGIN,
             "referer": `${CONFIG.UPSTREAM_ORIGIN}/`,
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "X-Forwarded-For": fakeIP,
             "X-Real-IP": fakeIP,
             "CF-Connecting-IP": fakeIP,
-            "True-Client-IP": fakeIP,
-            "X-Client-IP": fakeIP,
             "Cookie": `anon_user_id=${anonUserId};`
         },
         fakeIP: fakeIP
@@ -204,18 +232,84 @@ function getModelConfig(model) {
     return CONFIG.MODEL_CONFIGS[model] || CONFIG.MODEL_CONFIGS[CONFIG.DEFAULT_MODEL];
 }
 
+/**
+ * 轉換比例格式給 Pollinations
+ */
+function convertAspectRatioForPollinations(aspectRatio) {
+    const ratioMap = {
+        "1:1": { width: 1024, height: 1024 },
+        "16:9": { width: 1920, height: 1080 },
+        "9:16": { width: 1080, height: 1920 },
+        "4:3": { width: 1024, height: 768 },
+        "3:4": { width: 768, height: 1024 }
+    };
+    return ratioMap[aspectRatio] || { width: 1024, height: 1024 };
+}
+
+/**
+ * Pollinations.ai 圖片生成
+ */
+async function performPollinationsGeneration(prompt, model, aspectRatio, logger, index = 0, safeMode = true) {
+    const modelConfig = getModelConfig(model);
+    const logPrefix = index > 0 ? `[Image ${index+1}]` : "";
+    const dimensions = convertAspectRatioForPollinations(aspectRatio);
+    
+    logger.add(`${logPrefix}Pollinations Request`, {
+        provider: "pollinations",
+        model: modelConfig.upstreamModel,
+        prompt: prompt.substring(0, 50) + "...",
+        dimensions: dimensions,
+        safeMode: safeMode,
+        isFree: true
+    });
+
+    // 構建 URL 參數
+    const params = new URLSearchParams({
+        model: modelConfig.upstreamModel,
+        width: dimensions.width.toString(),
+        height: dimensions.height.toString(),
+        nologo: "true",
+        enhance: safeMode ? "false" : "true",
+        nofeed: "true"
+    });
+    
+    // Pollinations.ai 的 GET 請求格式
+    const imageUrl = `${CONFIG.POLLINATIONS_ORIGIN}/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
+    
+    logger.add(`${logPrefix}Pollinations URL`, imageUrl);
+    
+    try {
+        // 驗證圖片是否可訪問
+        const response = await fetch(imageUrl, { method: 'HEAD' });
+        
+        if (response.ok) {
+            logger.add(`${logPrefix}Pollinations Success`, {
+                status: response.status,
+                url: imageUrl
+            });
+            return imageUrl;
+        } else {
+            throw new Error(`Pollinations returned ${response.status}`);
+        }
+    } catch (e) {
+        logger.add(`${logPrefix}Pollinations Error`, e.message);
+        throw e;
+    }
+}
+
+/**
+ * 上游付費服務生成
+ */
 async function performUpstreamGeneration(prompt, model, aspectRatio, logger, index = 0, safeMode = true) {
     const fingerprint = generateFingerprint();
     const anonUserId = crypto.randomUUID(); 
     const { headers, fakeIP } = getFakeHeaders(fingerprint, anonUserId);
     const modelConfig = getModelConfig(model);
-    
     const logPrefix = index > 0 ? `[Image ${index+1}]` : "";
     
     logger.add(`${logPrefix}Identity Created`, { 
         model: model,
         provider: modelConfig.provider,
-        safeMode: safeMode,
         fingerprint, 
         anonUserId, 
         fakeIP: fakeIP
@@ -245,7 +339,6 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
             status: deductRes.status, 
             body: deductJson 
         });
-
     } catch (e) {
         logger.add(`${logPrefix}Deduct Error`, e.message);
     }
@@ -256,12 +349,11 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
     formData.append("num_outputs", "1");
     formData.append("inputMode", "text");
     
-    // 安全模式控制
     if (safeMode) {
         formData.append("style", "auto");
         formData.append("safe_mode", "true");
     } else {
-        formData.append("style", "none");  // 無樣式限制
+        formData.append("style", "none");
         formData.append("safe_mode", "false");
     }
     
@@ -276,9 +368,7 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
         url: `${CONFIG.UPSTREAM_ORIGIN}/api/gen-image`,
         provider: modelConfig.provider,
         model: model,
-        safeMode: safeMode,
-        prompt: prompt.substring(0, 50) + "...",
-        aspectRatio: aspectRatio
+        safeMode: safeMode
     });
 
     const response = await fetch(`${CONFIG.UPSTREAM_ORIGIN}/api/gen-image`, {
@@ -309,6 +399,9 @@ async function performUpstreamGeneration(prompt, model, aspectRatio, logger, ind
     }
 }
 
+/**
+ * 批量生成多張圖片(智能路由)
+ */
 async function performBatchGeneration(prompt, model, aspectRatio, numImages, logger, safeMode = true) {
     const modelConfig = getModelConfig(model);
     const modelMaxImages = modelConfig.maxImages || 1;
@@ -327,20 +420,32 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
         requestedImages: numImages, 
         actualImages: count,
         model: model,
+        provider: modelConfig.provider,
+        isFree: modelConfig.isFree,
         safeMode: safeMode,
-        modelLimit: modelMaxImages,
         prompt: prompt.substring(0, 80) + "..."
     });
 
     const promises = [];
     for (let i = 0; i < count; i++) {
-        promises.push(
-            performUpstreamGeneration(prompt, model, aspectRatio, logger, i, safeMode)
-                .catch(err => {
-                    logger.add(`Image ${i+1} Failed`, err.message);
-                    return null;
-                })
-        );
+        // 根據 provider 選擇生成函數
+        if (modelConfig.provider === "pollinations") {
+            promises.push(
+                performPollinationsGeneration(prompt, model, aspectRatio, logger, i, safeMode)
+                    .catch(err => {
+                        logger.add(`Image ${i+1} Failed`, err.message);
+                        return null;
+                    })
+            );
+        } else {
+            promises.push(
+                performUpstreamGeneration(prompt, model, aspectRatio, logger, i, safeMode)
+                    .catch(err => {
+                        logger.add(`Image ${i+1} Failed`, err.message);
+                        return null;
+                    })
+            );
+        }
     }
 
     const results = await Promise.all(promises);
@@ -357,13 +462,11 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
 
 async function handleChatCompletions(request, apiKey) {
     const logger = new Logger();
-    
     if (!verifyAuth(request, apiKey)) return createErrorResponse('Unauthorized', 401, 'unauthorized');
 
     try {
         const body = await request.json();
         const isWebUI = body.is_web_ui === true;
-
         const messages = body.messages || [];
         const lastMsg = messages[messages.length - 1];
         
@@ -374,18 +477,14 @@ async function handleChatCompletions(request, apiKey) {
             prompt = lastMsg.content;
         } else if (Array.isArray(lastMsg.content)) {
             for (const part of lastMsg.content) {
-                if (part.type === 'text') {
-                    prompt += part.text + " ";
-                }
+                if (part.type === 'text') prompt += part.text + " ";
             }
         }
 
         const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
         const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
         const modelConfig = getModelConfig(model);
-        
-        // 檢查 NSFW 支持
-        const safeMode = body.safe_mode !== false; // 默認啟用安全模式
+        const safeMode = body.safe_mode !== false;
         
         if (!safeMode && !modelConfig.supportsNSFW) {
             throw new Error(`模型 ${modelConfig.displayName} 不支持 NSFW 內容`);
@@ -394,8 +493,8 @@ async function handleChatCompletions(request, apiKey) {
         if (!safeMode && CONFIG.SAFETY_CONFIG.logNSFWRequests) {
             logger.add("NSFW Request", {
                 model: model,
-                timestamp: new Date().toISOString(),
-                promptPreview: prompt.substring(0, 50) + "..."
+                provider: modelConfig.provider,
+                timestamp: new Date().toISOString()
             });
         }
         
@@ -414,14 +513,9 @@ async function handleChatCompletions(request, apiKey) {
 
         const imageUrls = await performBatchGeneration(prompt, model, finalAspectRatio, numImages, logger, safeMode);
 
-        if (imageUrls.length === 0) {
-            throw new Error("All image generations failed");
-        }
+        if (imageUrls.length === 0) throw new Error("All image generations failed");
 
-        const respContent = imageUrls.map((url, idx) => 
-            `![Generated Image ${idx + 1}](${url})`
-        ).join('\n\n');
-        
+        const respContent = imageUrls.map((url, idx) => `![Generated Image ${idx + 1}](${url})`).join('\n\n');
         const respId = `chatcmpl-${crypto.randomUUID()}`;
 
         if (body.stream) {
@@ -439,11 +533,7 @@ async function handleChatCompletions(request, apiKey) {
                     object: 'chat.completion.chunk', 
                     created: Math.floor(Date.now()/1000),
                     model: model, 
-                    choices: [{ 
-                        index: 0, 
-                        delta: { content: respContent }, 
-                        finish_reason: null 
-                    }]
+                    choices: [{ index: 0, delta: { content: respContent }, finish_reason: null }]
                 };
                 await writer.write(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
                 
@@ -452,11 +542,7 @@ async function handleChatCompletions(request, apiKey) {
                     object: 'chat.completion.chunk', 
                     created: Math.floor(Date.now()/1000),
                     model: model, 
-                    choices: [{ 
-                        index: 0, 
-                        delta: {}, 
-                        finish_reason: 'stop' 
-                    }]
+                    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }]
                 };
                 await writer.write(encoder.encode(`data: ${JSON.stringify(endChunk)}\n\n`));
                 await writer.write(encoder.encode('data: [DONE]\n\n'));
@@ -493,11 +579,9 @@ async function handleImageGenerations(request, apiKey) {
     try {
         const body = await request.json();
         const prompt = body.prompt;
-        
         const requestedModel = body.model || CONFIG.DEFAULT_MODEL;
         const model = CONFIG.MODELS.includes(requestedModel) ? requestedModel : CONFIG.DEFAULT_MODEL;
         const modelConfig = getModelConfig(model);
-        
         const safeMode = body.safe_mode !== false;
         
         if (!safeMode && !modelConfig.supportsNSFW) {
@@ -509,11 +593,7 @@ async function handleImageGenerations(request, apiKey) {
         else if (body.size === "1792x1024") size = "16:9";
         else size = "1:1";
 
-        const numImages = Math.min(
-            Math.max(1, body.n || CONFIG.DEFAULT_NUM_IMAGES), 
-            CONFIG.MAX_IMAGES
-        );
-
+        const numImages = Math.min(Math.max(1, body.n || CONFIG.DEFAULT_NUM_IMAGES), CONFIG.MAX_IMAGES);
         const imageUrls = await performBatchGeneration(prompt, model, size, numImages, logger, safeMode);
 
         return new Response(JSON.stringify({
@@ -604,7 +684,6 @@ function handleAgeVerification(request) {
             <strong>⚠️ 成人內容警告</strong><br>
             本服務包含藝術創作功能,可能生成成人內容。
         </div>
-        
         <div class="terms">
             <strong>使用條款:</strong><br><br>
             1. 我已年滿 18 歲(或當地法定成年年齡)<br>
@@ -618,13 +697,10 @@ function handleAgeVerification(request) {
             - 暴力、仇恨或非法內容<br>
             - 侵犯他人權利的內容
         </div>
-        
         <p style="font-size: 16px; margin: 20px 0;">您是否已年滿 18 歲並同意以上條款?</p>
-        
         <button onclick="verify()">✓ 是的,我已年滿 18 歲</button>
         <button class="decline" onclick="decline()">✗ 否,我未滿 18 歲</button>
     </div>
-    
     <script>
         function verify() {
             document.cookie = 'age_verified=true; max-age=86400; path=/; SameSite=Strict';
@@ -644,24 +720,33 @@ function handleAgeVerification(request) {
 // --- [第四部分: Web UI] ---
 function handleUI(request, apiKey) {
   const origin = new URL(request.url).origin;
-  
-  // 檢查年齡驗證 Cookie
   const cookies = request.headers.get('Cookie') || '';
   const ageVerified = cookies.includes('age_verified=true');
   
   if (CONFIG.SAFETY_CONFIG.requireAgeVerification && !ageVerified) {
-    return new Response(null, {
-      status: 302,
-      headers: { 'Location': '/age-verify' }
-    });
+    return new Response(null, { status: 302, headers: { 'Location': '/age-verify' } });
   }
   
-  const modelOptions = CONFIG.MODELS.map(modelId => {
-    const config = CONFIG.MODEL_CONFIGS[modelId];
-    const isDefault = modelId === CONFIG.DEFAULT_MODEL;
-    const nsfwTag = config.supportsNSFW ? '' : ' [僅安全模式]';
-    return `<option value="${modelId}" ${isDefault ? 'selected' : ''}>${config.displayName}${nsfwTag} - ${config.description}</option>`;
-  }).join('\n');
+  // 按 provider 分組模型選項
+  const freeModels = CONFIG.MODELS.filter(id => CONFIG.MODEL_CONFIGS[id].isFree);
+  const paidModels = CONFIG.MODELS.filter(id => !CONFIG.MODEL_CONFIGS[id].isFree);
+  
+  const modelOptionsHTML = `
+    <optgroup label="🆓 免費模型 (Pollinations.ai)">
+      ${freeModels.map(id => {
+        const config = CONFIG.MODEL_CONFIGS[id];
+        const isDefault = id === CONFIG.DEFAULT_MODEL;
+        return `<option value="${id}" ${isDefault ? 'selected' : ''}>${config.displayName} - ${config.description}</option>`;
+      }).join('\n')}
+    </optgroup>
+    <optgroup label="💎 付費模型 (Premium)">
+      ${paidModels.map(id => {
+        const config = CONFIG.MODEL_CONFIGS[id];
+        const nsfwTag = config.supportsNSFW ? '' : ' [僅安全]';
+        return `<option value="${id}">${config.displayName}${nsfwTag} - ${config.description} (${config.credits}學分)</option>`;
+      }).join('\n')}
+    </optgroup>
+  `;
   
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -670,15 +755,16 @@ function handleUI(request, apiKey) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${CONFIG.PROJECT_NAME} v${CONFIG.PROJECT_VERSION}</title>
     <style>
-      :root { --bg: #09090b; --panel: #18181b; --border: #27272a; --text: #e4e4e7; --primary: #f59e0b; --accent: #3b82f6; --code-bg: #000000; --warning: #dc2626; }
+      :root { --bg: #09090b; --panel: #18181b; --border: #27272a; --text: #e4e4e7; --primary: #f59e0b; --accent: #3b82f6; --code-bg: #000000; --success: #10b981; }
       body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; height: 100vh; display: flex; overflow: hidden; }
       .sidebar { width: 360px; background: var(--panel); border-right: 1px solid var(--border); padding: 24px; display: flex; flex-direction: column; overflow-y: auto; }
       .main { flex: 1; display: flex; flex-direction: column; padding: 24px; background-color: #000; }
       h2 { margin-top: 0; font-size: 20px; color: #fff; display: flex; align-items: center; gap: 10px; }
       .badge { background: var(--primary); color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-      .badge-nsfw { background: var(--warning); color: #fff; }
+      .badge-free { background: var(--success); color: #fff; }
       .box { background: #27272a; padding: 16px; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 20px; }
       .warning-box { background: #7f1d1d; border-color: #991b1b; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #fecaca; }
+      .info-box { background: #064e3b; border: 1px solid #059669; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #6ee7b7; }
       .label { font-size: 12px; color: #a1a1aa; margin-bottom: 8px; display: block; font-weight: 600; }
       .warning { font-size: 11px; color: #fbbf24; margin-top: -8px; margin-bottom: 12px; display: none; }
       .code-block { font-family: 'Consolas', monospace; font-size: 12px; color: var(--primary); background: #111; padding: 10px; border-radius: 6px; cursor: pointer; word-break: break-all; border: 1px solid #333; transition: 0.2s; }
@@ -710,6 +796,11 @@ function handleUI(request, apiKey) {
     <div class="sidebar">
         <h2>🎨 Multi-Model <span class="badge">v${CONFIG.PROJECT_VERSION}</span></h2>
         
+        <div class="info-box">
+            🆓 <strong>新增免費模型!</strong><br>
+            Pollinations.ai 提供完全免費的 AI 生成服務
+        </div>
+        
         <div class="warning-box">
             🔞 <strong>18+ 內容警告</strong><br>
             本工具支持藝術創作模式。請負責任地使用。
@@ -727,9 +818,10 @@ function handleUI(request, apiKey) {
 
         <div class="box">
             <span class="label">🤖 AI 模型</span>
-            <select id="model" onchange="updateImageOptions()">
-                ${modelOptions}
+            <select id="model" onchange="updateModelInfo()">
+                ${modelOptionsHTML}
             </select>
+            <div id="model-info" style="font-size: 11px; color: #10b981; margin-top: -8px; margin-bottom: 12px;"></div>
             
             <span class="label">🖼️ 生成數量</span>
             <select id="num-images">
@@ -766,13 +858,13 @@ function handleUI(request, apiKey) {
         <div class="result-area" id="result-container">
             <div style="color:#3f3f46; text-align:center;">
                 <p style="font-size: 16px;">📸 圖片預覽區域</p>
-                <p style="font-size: 12px;">支持 ${CONFIG.MODELS.length} 個 AI 模型 · 根據模型生成 1-4 張圖片</p>
+                <p style="font-size: 12px;">支持 ${CONFIG.MODELS.length} 個 AI 模型 · 包含 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
                 <div class="spinner" id="spinner"></div>
             </div>
         </div>
         
         <div class="status-bar">
-            <span id="status-text">系統就緒 · ${CONFIG.MODELS.length} 個模型可用</span>
+            <span id="status-text">系統就緒 · ${CONFIG.MODELS.length} 個模型可用 (含 ${freeModels.length} 個免費)</span>
             <span id="time-text"></span>
         </div>
 
@@ -787,6 +879,22 @@ function handleUI(request, apiKey) {
         const MODEL_CONFIGS = ${JSON.stringify(CONFIG.MODEL_CONFIGS)};
 
         function copy(text) { navigator.clipboard.writeText(text); alert('已複製'); }
+
+        function updateModelInfo() {
+            const model = document.getElementById('model').value;
+            const modelConfig = MODEL_CONFIGS[model];
+            const infoDiv = document.getElementById('model-info');
+            
+            if (modelConfig.isFree) {
+                infoDiv.innerHTML = '✨ 完全免費 · 無需積分';
+                infoDiv.style.color = '#10b981';
+            } else {
+                infoDiv.innerHTML = \`💳 消耗 \${modelConfig.credits} 學分/張\`;
+                infoDiv.style.color = '#fbbf24';
+            }
+            
+            updateImageOptions();
+        }
 
         function updateSafeMode() {
             const safeMode = document.getElementById('safe-mode').checked;
@@ -822,17 +930,11 @@ function handleUI(request, apiKey) {
                 numImagesSelect.appendChild(option);
             }
             
-            if (maxImages === 1) {
-                warning.style.display = 'block';
-            } else {
-                warning.style.display = 'none';
-            }
-            
-            // 檢查 NSFW 支持
+            warning.style.display = maxImages === 1 ? 'block' : 'none';
             updateSafeMode();
         }
         
-        updateImageOptions();
+        updateModelInfo();
 
         function appendLog(step, data) {
             const logs = document.getElementById('logs');
@@ -854,19 +956,19 @@ function handleUI(request, apiKey) {
             const numImages = parseInt(document.getElementById('num-images').value) || 1;
             const aspectRatio = document.getElementById('ratio').value;
             const safeMode = document.getElementById('safe-mode').checked;
-
+            const modelConfig = MODEL_CONFIGS[model];
+            const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
+            const costText = modelConfig.isFree ? '免費' : \`\${modelConfig.credits * numImages}學分\`;
+            
             const btn = document.getElementById('btn-gen');
             const spinner = document.getElementById('spinner');
             const status = document.getElementById('status-text');
             const container = document.getElementById('result-container');
             const timeText = document.getElementById('time-text');
-
-            const modelConfig = MODEL_CONFIGS[model];
-            const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
             
             if(btn) { btn.disabled = true; btn.innerText = \`生成 \${numImages} 張中...\`; }
             if(spinner) spinner.style.display = 'inline-block';
-            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} (\${modeText}) 生成...\`;
+            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} (\${modeText}, \${costText})...\`;
             if(container) container.innerHTML = '<div class="spinner" style="display:block"></div>';
 
             const startTime = Date.now();
@@ -882,7 +984,7 @@ function handleUI(request, apiKey) {
                     safe_mode: safeMode
                 };
 
-                appendLog("System", \`Using \${modelConfig.displayName} (max: \${modelConfig.maxImages}, mode: \${modeText})\`);
+                appendLog("System", \`Using \${modelConfig.displayName} | Provider: \${modelConfig.provider} | Free: \${modelConfig.isFree} | Mode: \${modeText}\`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
@@ -936,7 +1038,7 @@ function handleUI(request, apiKey) {
                     ).join('');
                     
                     if(container) container.innerHTML = \`<div class="image-grid">\${gridHtml}</div>\`;
-                    if(status) status.innerText = \`✅ \${modelConfig.displayName} (\${modeText}) 成功生成 \${imageUrls.length} 張\`;
+                    if(status) status.innerText = \`✅ \${modelConfig.displayName} (\${modeText}) 成功生成 \${imageUrls.length} 張 | \${costText}\`;
                     if(timeText) timeText.innerText = \`耗時: \${((Date.now()-startTime)/1000).toFixed(2)}s\`;
                     appendLog("Success", \`Generated \${imageUrls.length} images\`);
                 } else {
