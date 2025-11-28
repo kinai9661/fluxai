@@ -1,21 +1,22 @@
 // =================================================================================
 //  項目: ai-generator-2api (Cloudflare Worker 單文件版)
-//  版本: 2.10.0 (代號: Style Master Edition)
+//  版本: 2.12.0 (代號: Pollinations Ultimate Edition)
 //  作者: 首席AI執行官
 //  日期: 2025-11-28
 //
-//  [v2.10.0 變更日誌]
-//  1. [新增] 15+ 種藝術風格預設系統
-//  2. [新增] 日本漫畫、動漫、寫實、油畫等風格
-//  3. [增強] 風格智能融合到提示詞
-//  4. [優化] Web UI 風格選擇器
-//  5. [保留] 所有現有功能完整支持
+//  [v2.12.0 變更日誌]
+//  1. [新增] flux-pro 到 Pollinations 免費通道
+//  2. [新增] flux.1-kontext-por 情境理解模型
+//  3. [新增] flux-1.1-pro 最新專業版
+//  4. [擴展] 總共 12 個 Pollinations 免費模型
+//  5. [優化] 四級分類: 基礎/專業/特化/實驗
+//  6. [保留] 所有現有功能完整支持
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.10.0",
+  PROJECT_VERSION: "2.12.0",
   
   API_MASTER_KEY: "1", 
   
@@ -49,7 +50,7 @@ const CONFIG = {
     "manga": {
       name: "日本漫畫",
       prompt: "manga style, black and white, ink drawing, Japanese comic book art, detailed linework, screentone shading",
-      description: "黑白漫畫風格,細緻線條"
+      description: "黑白漫畫風格,細膩線條"
     },
     "realistic": {
       name: "寫實照片",
@@ -99,7 +100,7 @@ const CONFIG = {
     "impressionism": {
       name: "印象派",
       prompt: "impressionist painting, loose brushwork, light and color emphasis, Monet style, outdoor scene",
-      description: "莫奈印象派風格"
+      description: "莫內印象派風格"
     },
     "art-nouveau": {
       name: "新藝術",
@@ -135,20 +136,9 @@ const CONFIG = {
   
   DEFAULT_STYLE: "auto",
   
-  // Pollinations 靜態配置
+  // Pollinations 完整模型配置 (12個免費模型)
   POLLINATIONS_MODELS: {
-    "pollinations-flux": {
-      displayName: "Pollinations Flux",
-      provider: "pollinations",
-      upstreamModel: "flux",
-      credits: 0,
-      speed: "fast",
-      quality: "excellent",
-      description: "免費Flux模型,高質量快速生成",
-      maxImages: 4,
-      supportsNSFW: true,
-      isFree: true
-    },
+    // === 基礎高速模型 ===
     "pollinations-turbo": {
       displayName: "Pollinations Turbo",
       provider: "pollinations",
@@ -156,10 +146,52 @@ const CONFIG = {
       credits: 0,
       speed: "very-fast",
       quality: "good",
-      description: "免費超快速模型,適合快速迭代",
+      description: "超快速基礎模型,適合快速迭代",
       maxImages: 4,
       supportsNSFW: true,
-      isFree: true
+      isFree: true,
+      category: "basic"
+    },
+    "pollinations-flux": {
+      displayName: "Pollinations Flux",
+      provider: "pollinations",
+      upstreamModel: "flux",
+      credits: 0,
+      speed: "fast",
+      quality: "excellent",
+      description: "高質量通用模型,平衡速度與品質",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "basic"
+    },
+    
+    // === 專業級模型 ===
+    "pollinations-flux-pro": {
+      displayName: "Pollinations Flux Pro ⭐",
+      provider: "pollinations",
+      upstreamModel: "flux-pro",
+      credits: 0,
+      speed: "medium",
+      quality: "best",
+      description: "專業級Flux Pro,極致細節和質量",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "professional"
+    },
+    "pollinations-flux-1.1-pro": {
+      displayName: "Pollinations Flux 1.1 Pro 🔥",
+      provider: "pollinations",
+      upstreamModel: "flux-1.1-pro",
+      credits: 0,
+      speed: "medium",
+      quality: "best",
+      description: "最新1.1版本,更快更準確",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "professional"
     },
     "pollinations-flux-realism": {
       displayName: "Pollinations Flux Realism",
@@ -168,10 +200,106 @@ const CONFIG = {
       credits: 0,
       speed: "medium",
       quality: "excellent",
-      description: "免費寫實風格模型,照片級質量",
+      description: "寫實風格特化,照片級真實感",
       maxImages: 4,
       supportsNSFW: true,
-      isFree: true
+      isFree: true,
+      category: "professional"
+    },
+    
+    // === 特化專用模型 ===
+    "pollinations-flux-anime": {
+      displayName: "Pollinations Flux Anime",
+      provider: "pollinations",
+      upstreamModel: "flux-anime",
+      credits: 0,
+      speed: "medium",
+      quality: "excellent",
+      description: "動漫風格特化,完美的二次元",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "specialized"
+    },
+    "pollinations-flux-3d": {
+      displayName: "Pollinations Flux 3D",
+      provider: "pollinations",
+      upstreamModel: "flux-3d",
+      credits: 0,
+      speed: "medium",
+      quality: "excellent",
+      description: "3D渲染風格,立體建模效果",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "specialized"
+    },
+    "pollinations-flux-kontext": {
+      displayName: "Pollinations Flux Kontext 🎯",
+      provider: "pollinations",
+      upstreamModel: "flux-kontext",
+      credits: 0,
+      speed: "medium",
+      quality: "excellent",
+      description: "情境理解增強,複雜場景構圖",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "specialized"
+    },
+    "pollinations-flux-kontext-por": {
+      displayName: "Pollinations Flux Kontext Por 🔥",
+      provider: "pollinations",
+      upstreamModel: "flux.1-kontext-por",
+      credits: 0,
+      speed: "medium",
+      quality: "best",
+      description: "Kontext Por版,藝術創作增強",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "specialized"
+    },
+    
+    // === 實驗特效模型 ===
+    "pollinations-flux-cablyai": {
+      displayName: "Pollinations Flux CablyAI",
+      provider: "pollinations",
+      upstreamModel: "flux-cablyai",
+      credits: 0,
+      speed: "medium",
+      quality: "excellent",
+      description: "CablyAI增強版,創意構圖優化",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "experimental"
+    },
+    "pollinations-any-dark": {
+      displayName: "Pollinations Any Dark",
+      provider: "pollinations",
+      upstreamModel: "any-dark",
+      credits: 0,
+      speed: "fast",
+      quality: "good",
+      description: "暗色調風格,低光環境優化",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "experimental"
+    },
+    "pollinations-midjourney": {
+      displayName: "Pollinations Midjourney Style",
+      provider: "pollinations",
+      upstreamModel: "midjourney",
+      credits: 0,
+      speed: "medium",
+      quality: "excellent",
+      description: "Midjourney風格模擬,藝術感強",
+      maxImages: 4,
+      supportsNSFW: true,
+      isFree: true,
+      category: "experimental"
     }
   },
   
@@ -204,7 +332,7 @@ export default {
     if (url.pathname === '/v1/images/generations') return handleImageGenerations(request, apiKey);
     if (url.pathname === '/v1/models') return handleModelsRequest();
     if (url.pathname === '/v1/models/refresh') return handleModelsRefresh(request, apiKey);
-    if (url.pathname === '/v1/styles') return handleStylesRequest(); // NEW
+    if (url.pathname === '/v1/styles') return handleStylesRequest();
     
     return createErrorResponse(`Endpoint not found: ${url.pathname}`, 404, 'not_found');
   }
@@ -252,9 +380,6 @@ function getFakeHeaders(fingerprint, anonUserId) {
     };
 }
 
-/**
- * 應用風格到提示詞
- */
 function applyStyleToPrompt(prompt, style) {
     if (!style || style === "auto" || style === "none") {
         return prompt;
@@ -265,7 +390,6 @@ function applyStyleToPrompt(prompt, style) {
         return prompt;
     }
     
-    // 將風格提示詞融合到用戶提示詞中
     return `${prompt}, ${styleConfig.prompt}`;
 }
 
@@ -314,6 +438,7 @@ function convertUpstreamModel(upstreamModel) {
         maxImages: upstreamModel.maxImages || CONFIG.UPSTREAM_MODEL_DEFAULTS.maxImages,
         supportsNSFW: upstreamModel.supportsNSFW !== false,
         isFree: false,
+        category: "premium",
         lastUpdated: new Date().toISOString()
     };
 }
@@ -348,7 +473,8 @@ async function getAllModels() {
                 description: "快速生成,適合快速迭代",
                 maxImages: 4,
                 supportsNSFW: true,
-                isFree: false
+                isFree: false,
+                category: "premium"
             },
             "flux-dev": {
                 displayName: "Flux Dev",
@@ -359,18 +485,8 @@ async function getAllModels() {
                 description: "開發版本,高質量輸出",
                 maxImages: 4,
                 supportsNSFW: true,
-                isFree: false
-            },
-            "flux-pro": {
-                displayName: "Flux Pro",
-                provider: "replicate",
-                credits: 5,
-                speed: "slow",
-                quality: "best",
-                description: "專業版本,最高質量(僅單張)",
-                maxImages: 1,
-                supportsNSFW: true,
-                isFree: false
+                isFree: false,
+                category: "premium"
             }
         });
     }
@@ -406,6 +522,7 @@ async function performPollinationsGeneration(prompt, model, aspectRatio, logger,
     logger.add(`${logPrefix}Pollinations Request`, {
         provider: "pollinations",
         model: modelConfig.upstreamModel,
+        displayName: modelConfig.displayName,
         prompt: prompt.substring(0, 50) + "...",
         dimensions: dimensions,
         safeMode: safeMode,
@@ -544,6 +661,7 @@ async function performBatchGeneration(prompt, model, aspectRatio, numImages, log
         requestedImages: numImages, 
         actualImages: count,
         model: model,
+        displayName: modelConfig.displayName,
         provider: modelConfig.provider,
         isFree: modelConfig.isFree,
         safeMode: safeMode,
@@ -604,7 +722,6 @@ async function handleChatCompletions(request, apiKey) {
             }
         }
         
-        // 應用風格
         const style = body.style || CONFIG.DEFAULT_STYLE;
         const styledPrompt = applyStyleToPrompt(prompt, style);
         
@@ -704,7 +821,6 @@ async function handleImageGenerations(request, apiKey) {
         const body = await request.json();
         let prompt = body.prompt;
         
-        // 應用風格
         const style = body.style || CONFIG.DEFAULT_STYLE;
         prompt = applyStyleToPrompt(prompt, style);
         
@@ -902,7 +1018,6 @@ function handleUI(request, apiKey) {
     return new Response(null, { status: 302, headers: { 'Location': '/age-verify' } });
   }
   
-  // 生成風格選項
   const styleOptions = Object.keys(CONFIG.STYLE_PRESETS).map(styleId => {
     const style = CONFIG.STYLE_PRESETS[styleId];
     const isDefault = styleId === CONFIG.DEFAULT_STYLE;
@@ -958,8 +1073,8 @@ function handleUI(request, apiKey) {
         <h2>🎨 Multi-Model <span class="badge">v${CONFIG.PROJECT_VERSION}</span></h2>
         
         <div class="info-box">
-            🆓 <strong>新增免費模型!</strong><br>
-            Pollinations.ai 提供完全免費的 AI 生成服務<br>
+            🆓 <strong>12個免費模型!</strong><br>
+            含 Flux Pro/Kontext 等專業模型<br>
             <span id="model-count" style="font-size: 11px; opacity: 0.8;">載入模型中...</span>
         </div>
         
@@ -1017,7 +1132,7 @@ function handleUI(request, apiKey) {
             <div class="warning" id="nsfw-warning" style="display:none; color:#dc2626;">⚠️ 已關閉安全模式 - 請負責任使用</div>
 
             <span class="label">✨ 提示詞</span>
-            <textarea id="prompt" rows="6" placeholder="描述你想生成的圖片...\n\n例如: 一個未來城市的夜景"></textarea>
+            <textarea id="prompt" rows="6" placeholder="描述你想生成的圖片...\n\n例如: 一個可愛的貓女孩"></textarea>
             
             <button id="btn-gen" onclick="generate()">🚀 開始生成</button>
         </div>
@@ -1027,7 +1142,7 @@ function handleUI(request, apiKey) {
         <div class="result-area" id="result-container">
             <div style="color:#3f3f46; text-align:center;">
                 <p style="font-size: 16px;">📸 圖片預覽區域</p>
-                <p style="font-size: 12px;">支持多個 AI 模型 · 包含 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
+                <p style="font-size: 12px;">支持多個 AI 模型 · 包含 12 個 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
                 <p style="font-size: 12px;">🎨 現已支持 ${Object.keys(CONFIG.STYLE_PRESETS).length} 種藝術風格</p>
                 <div class="spinner" id="spinner"></div>
             </div>
@@ -1072,16 +1187,16 @@ function handleUI(request, apiKey) {
                 
                 const freeCount = data.data.filter(m => m.isFree).length;
                 const totalCount = data.data.length;
-                document.getElementById('model-count').innerText = \`載入 \${totalCount} 個模型 (\${freeCount} 個免費)\`;
+                document.getElementById('model-count').innerText = `載入 ${totalCount} 個模型 (${freeCount} 個免費)`;
                 
                 const cacheInfo = data.cache_info;
-                let statusText = \`系統就緒 · \${totalCount} 個模型可用 (\${freeCount} 個免費)\`;
+                let statusText = `系統就緒 · ${totalCount} 個模型可用 (${freeCount} 個免費)`;
                 if (cacheInfo && cacheInfo.last_updated) {
                     const updateTime = new Date(cacheInfo.last_updated).toLocaleTimeString();
-                    statusText += \` · 更新於 \${updateTime}\`;
+                    statusText += ` · 更新於 ${updateTime}`;
                 }
                 document.getElementById('status-text').innerText = statusText;
-                appendLog("Models Loaded", \`Total: \${totalCount}, Free: \${freeCount}\`);
+                appendLog("Models Loaded", `Total: ${totalCount}, Free: ${freeCount}`);
             } catch (e) {
                 console.error('Failed to load models:', e);
                 appendLog("Error", "Failed to load models: " + e.message);
@@ -1090,26 +1205,63 @@ function handleUI(request, apiKey) {
         
         function updateModelSelect() {
             const modelSelect = document.getElementById('model');
-            const freeModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree);
+            
+            // 按類別分組
+            const basicModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'basic');
+            const professionalModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'professional');
+            const specializedModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'specialized');
+            const experimentalModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree && MODEL_CONFIGS[id].category === 'experimental');
             const paidModels = MODEL_IDS.filter(id => !MODEL_CONFIGS[id].isFree);
             
             let html = '';
             
-            if (freeModels.length > 0) {
-                html += '<optgroup label="🆓 免費模型 (Pollinations.ai)">';
-                freeModels.forEach(id => {
+            // 基礎免費模型
+            if (basicModels.length > 0) {
+                html += '<optgroup label="🆓 基礎免費模型 (Pollinations)">';
+                basicModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
-                    html += \`<option value="\${id}">\${config.displayName} - \${config.description}</option>\`;
+                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
                 });
                 html += '</optgroup>';
             }
             
+            // 專業免費模型
+            if (professionalModels.length > 0) {
+                html += '<optgroup label="🌟 專業免費模型 (Pollinations Pro)">';
+                professionalModels.forEach(id => {
+                    const config = MODEL_CONFIGS[id];
+                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
+                });
+                html += '</optgroup>';
+            }
+            
+            // 特化免費模型
+            if (specializedModels.length > 0) {
+                html += '<optgroup label="🎯 特化免費模型 (Pollinations Specialized)">';
+                specializedModels.forEach(id => {
+                    const config = MODEL_CONFIGS[id];
+                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
+                });
+                html += '</optgroup>';
+            }
+            
+            // 實驗免費模型
+            if (experimentalModels.length > 0) {
+                html += '<optgroup label="✨ 實驗免費模型 (Pollinations Lab)">';
+                experimentalModels.forEach(id => {
+                    const config = MODEL_CONFIGS[id];
+                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
+                });
+                html += '</optgroup>';
+            }
+            
+            // 付費高端模型
             if (paidModels.length > 0) {
-                html += '<optgroup label="💎 付費模型 (Premium)">';
+                html += '<optgroup label="💎 付費高端模型 (Premium)">';
                 paidModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
                     const nsfwTag = config.supportsNSFW ? '' : ' [僅安全]';
-                    html += \`<option value="\${id}">\${config.displayName}\${nsfwTag} - \${config.description} (\${config.credits}學分)</option>\`;
+                    html += `<option value="${id}">${config.displayName}${nsfwTag} - ${config.description} (${config.credits}學分)</option>`;
                 });
                 html += '</optgroup>';
             }
@@ -1133,7 +1285,7 @@ function handleUI(request, apiKey) {
                 
                 if (data.success) {
                     appendLog("Model Refresh", data);
-                    alert(\`模型更新成功!\n總計: \${data.total_models}\n免費: \${data.free_models}\n付費: \${data.paid_models}\`);
+                    alert(`模型更新成功!\n總計: ${data.total_models}\n免費: ${data.free_models}\n付費: ${data.paid_models}`);
                     await loadModels();
                 } else {
                     throw new Error(data.message || 'Refresh failed');
@@ -1155,7 +1307,7 @@ function handleUI(request, apiKey) {
             if (style === 'auto') {
                 infoDiv.innerHTML = 'ℹ️ AI 將自動選擇最佳風格';
             } else if (styleConfig) {
-                infoDiv.innerHTML = \`💡 將增強提示詞以匹配 \${styleConfig.name} 風格\`;
+                infoDiv.innerHTML = `💡 將增強提示詞以匹配 ${styleConfig.name} 風格`;
             }
         }
 
@@ -1170,7 +1322,7 @@ function handleUI(request, apiKey) {
                 infoDiv.innerHTML = '✨ 完全免費 · 無需積分';
                 infoDiv.style.color = '#10b981';
             } else {
-                infoDiv.innerHTML = \`💳 消耗 \${modelConfig.credits} 學分/張\`;
+                infoDiv.innerHTML = `💳 消耗 ${modelConfig.credits} 學分/張`;
                 infoDiv.style.color = '#fbbf24';
             }
             
@@ -1225,8 +1377,8 @@ function handleUI(request, apiKey) {
             const div = document.createElement('div');
             div.className = 'log-entry';
             const time = new Date().toLocaleTimeString();
-            let content = typeof data === 'object' ? \`<span class="log-json">\${JSON.stringify(data, null, 2)}</span>\` : \`<span style="color:#e4e4e7">\${data}</span>\`;
-            div.innerHTML = \`<span class="log-time">[\${time}]</span><span class="log-key">\${step}</span>\${content}\`;
+            let content = typeof data === 'object' ? `<span class="log-json">${JSON.stringify(data, null, 2)}</span>` : `<span style="color:#e4e4e7">${data}</span>`;
+            div.innerHTML = `<span class="log-time">[${time}]</span><span class="log-key">${step}</span>${content}`;
             if (logs.innerText.includes('//')) logs.innerHTML = '';
             logs.appendChild(div);
             logs.scrollTop = logs.scrollHeight;
@@ -1246,7 +1398,7 @@ function handleUI(request, apiKey) {
             
             const styleConfig = STYLES[style];
             const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
-            const costText = modelConfig.isFree ? '免費' : \`\${modelConfig.credits * numImages}學分\`;
+            const costText = modelConfig.isFree ? '免費' : `${modelConfig.credits * numImages}學分`;
             
             const btn = document.getElementById('btn-gen');
             const spinner = document.getElementById('spinner');
@@ -1254,9 +1406,9 @@ function handleUI(request, apiKey) {
             const container = document.getElementById('result-container');
             const timeText = document.getElementById('time-text');
             
-            if(btn) { btn.disabled = true; btn.innerText = \`生成 \${numImages} 張中...\`; }
+            if(btn) { btn.disabled = true; btn.innerText = `生成 ${numImages} 張中...`; }
             if(spinner) spinner.style.display = 'inline-block';
-            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} (\${styleConfig.name}, \${modeText}, \${costText})...\`;
+            if(status) status.innerText = `正在使用 ${modelConfig.displayName} (${styleConfig.name}, ${modeText}, ${costText})...`;
             if(container) container.innerHTML = '<div class="spinner" style="display:block"></div>';
 
             const startTime = Date.now();
@@ -1273,7 +1425,7 @@ function handleUI(request, apiKey) {
                     style: style
                 };
 
-                appendLog("System", \`Model: \${modelConfig.displayName} | Style: \${styleConfig.name} | Provider: \${modelConfig.provider} | Free: \${modelConfig.isFree}\`);
+                appendLog("System", `Model: ${modelConfig.displayName} | Style: ${styleConfig.name} | Provider: ${modelConfig.provider} | Free: ${modelConfig.isFree}`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
@@ -1283,7 +1435,7 @@ function handleUI(request, apiKey) {
 
                 if (!res.ok) {
                     const errData = await res.json();
-                    throw new Error(errData.error?.message || \`HTTP \${res.status}\`);
+                    throw new Error(errData.error?.message || `HTTP ${res.status}`);
                 }
 
                 const reader = res.body.getReader();
@@ -1294,7 +1446,7 @@ function handleUI(request, apiKey) {
                     const { done, value } = await reader.read();
                     if (done) break;
                     const chunk = decoder.decode(value);
-                    const lines = chunk.split('\\n');
+                    const lines = chunk.split('\n');
                     
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
@@ -1314,28 +1466,28 @@ function handleUI(request, apiKey) {
                     }
                 }
 
-                const urlRegex = /\\!\\[.*?\\]\\((.*?)\\)/g;
+                const urlRegex = /\!\[.*?\]\((.*?)\)/g;
                 const matches = [...fullContent.matchAll(urlRegex)];
                 
                 if (matches.length > 0) {
                     const imageUrls = matches.map(m => m[1]);
                     const gridHtml = imageUrls.map((url, idx) => 
-                        \`<div class="image-item">
-                            <img src="\${url}" class="result-img" onclick="window.open(this.src)">
-                            <div class="image-label">圖片 \${idx + 1} / \${imageUrls.length} · \${styleConfig.name}</div>
-                        </div>\`
+                        `<div class="image-item">
+                            <img src="${url}" class="result-img" onclick="window.open(this.src)">
+                            <div class="image-label">圖片 ${idx + 1} / ${imageUrls.length} · ${styleConfig.name}</div>
+                        </div>`
                     ).join('');
                     
-                    if(container) container.innerHTML = \`<div class="image-grid">\${gridHtml}</div>\`;
-                    if(status) status.innerText = \`✅ \${modelConfig.displayName} (\${styleConfig.name}, \${modeText}) 成功生成 \${imageUrls.length} 張 | \${costText}\`;
-                    if(timeText) timeText.innerText = \`耗時: \${((Date.now()-startTime)/1000).toFixed(2)}s\`;
-                    appendLog("Success", \`Generated \${imageUrls.length} images with \${styleConfig.name} style\`);
+                    if(container) container.innerHTML = `<div class="image-grid">${gridHtml}</div>`;
+                    if(status) status.innerText = `✅ ${modelConfig.displayName} (${styleConfig.name}, ${modeText}) 成功生成 ${imageUrls.length} 張 | ${costText}`;
+                    if(timeText) timeText.innerText = `耗時: ${((Date.now()-startTime)/1000).toFixed(2)}s`;
+                    appendLog("Success", `Generated ${imageUrls.length} images with ${styleConfig.name} style`);
                 } else {
                     throw new Error("無法提取圖片 URL");
                 }
 
             } catch (e) {
-                if(container) container.innerHTML = \`<div style="color:#ef4444; padding:20px; text-align:center">❌ \${e.message}</div>\`;
+                if(container) container.innerHTML = `<div style="color:#ef4444; padding:20px; text-align:center">❌ ${e.message}</div>`;
                 if(status) status.innerText = "❌ 錯誤";
                 appendLog("Error", e.message);
             } finally {
