@@ -1,6 +1,6 @@
 # 🎨 AI Generator Ultimate (Cloudflare Worker)
 
-[![Version](https://img.shields.io/badge/version-v2.16.0-blue?style=for-the-badge)](https://github.com/kinai9661/fluxai/releases)
+[![Version](https://img.shields.io/badge/version-v2.16.1-blue?style=for-the-badge)](https://github.com/kinai9661/fluxai/releases)
 [![Deploy to Cloudflare Workers](https://img.shields.io/badge/Deploy%20to-Cloudflare%20Workers-orange?style=for-the-badge&logo=cloudflare)](https://deploy.workers.cloudflare.com/?url=https://github.com/kinai9661/fluxai)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)]()
@@ -13,7 +13,7 @@
 
 ---
 
-## ✨ 核心功能 (v2.16.0)
+## ✨ 核心功能 (v2.16.1)
 
 ### 1. 🌐 API 提供商選擇器 (Multi-Provider)
 不再受限於單一 API！通過全新的 **分頁式界面 (Tabs)**，你可以自由選擇：
