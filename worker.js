@@ -1,23 +1,21 @@
 // =================================================================================
 //  項目: ai-generator-2api (Cloudflare Worker 單文件版)
-//  版本: 2.13.0 (代號: API Provider Selector)
+//  版本: 2.13.1 (代號: Hotfix UI)
 //  作者: 首席AI執行官
 //  日期: 2025-11-28
 //
-//  [v2.13.0 變更日誌]
-//  1. [新增] API 提供商選擇器 (Pollinations/Replicate/All)
-//  2. [新增] 按提供商過濾模型功能
-//  3. [新增] 提供商信息顯示 (模型數/費用/特點)
-//  4. [優化] 智能模型分組和排序
-//  5. [優化] UI 布局和交互體驗
-//  6. [保留] 所有 12 個 Pollinations 免費模型
-//  7. [保留] 所有現有功能完整支持
+//  [v2.13.1 變更日誌]
+//  1. [修復] UI 模板字符串語法錯誤 (Uncaught SyntaxError)
+//  2. [新增] API 提供商選擇器 (Pollinations/Replicate/All)
+//  3. [新增] 按提供商過濾模型功能
+//  4. [新增] 提供商信息顯示 (模型數/費用/特點)
+//  5. [保留] 所有 12 個 Pollinations 免費模型
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.13.0",
+  PROJECT_VERSION: "2.13.1",
   
   API_MASTER_KEY: "1", 
   
@@ -1061,21 +1059,21 @@ function handleUI(request, apiKey) {
   const styleOptions = Object.keys(CONFIG.STYLE_PRESETS).map(styleId => {
     const style = CONFIG.STYLE_PRESETS[styleId];
     const isDefault = styleId === CONFIG.DEFAULT_STYLE;
-    return `<option value="${styleId}" ${isDefault ? 'selected' : ''}>${style.name} - ${style.description}</option>`;
-  }).join('\n');
+    return `<option value="\\${styleId}" \\${isDefault ? 'selected' : ''}>\\${style.name} - \\${style.description}</option>`;
+  }).join('\\n');
   
   const providerOptions = Object.keys(CONFIG.API_PROVIDERS).map(providerId => {
     const provider = CONFIG.API_PROVIDERS[providerId];
     const isDefault = providerId === CONFIG.DEFAULT_PROVIDER;
-    return `<option value="${providerId}" ${isDefault ? 'selected' : ''}>${provider.icon} ${provider.name} - ${provider.description}</option>`;
-  }).join('\n');
+    return `<option value="\\${providerId}" \\${isDefault ? 'selected' : ''}>\\${provider.icon} \\${provider.name} - \\${provider.description}</option>`;
+  }).join('\\n');
   
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${CONFIG.PROJECT_NAME} v${CONFIG.PROJECT_VERSION}</title>
+    <title>\\${CONFIG.PROJECT_NAME} v\\${CONFIG.PROJECT_VERSION}</title>
     <style>
       :root { --bg: #09090b; --panel: #18181b; --border: #27272a; --text: #e4e4e7; --primary: #f59e0b; --accent: #3b82f6; --code-bg: #000000; --success: #10b981; }
       body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; height: 100vh; display: flex; overflow: hidden; }
@@ -1117,7 +1115,7 @@ function handleUI(request, apiKey) {
 </head>
 <body>
     <div class="sidebar">
-        <h2>🎨 Multi-Model <span class="badge">v${CONFIG.PROJECT_VERSION}</span></h2>
+        <h2>🎨 Multi-Model <span class="badge">v\\${CONFIG.PROJECT_VERSION}</span></h2>
         
         <div class="info-box">
             🆓 <strong>12個免費模型!</strong><br>
@@ -1132,12 +1130,12 @@ function handleUI(request, apiKey) {
         
         <div class="box">
             <span class="label">API 密鑰</span>
-            <div class="code-block" onclick="copy('${apiKey}')">${apiKey}</div>
+            <div class="code-block" onclick="copy('\\${apiKey}')">\\${apiKey}</div>
         </div>
 
         <div class="box">
             <span class="label">API 地址</span>
-            <div class="code-block" onclick="copy('${origin}/v1/chat/completions')">${origin}/v1/chat/completions</div>
+            <div class="code-block" onclick="copy('\\${origin}/v1/chat/completions')">\\${origin}/v1/chat/completions</div>
         </div>
 
         <div class="box">
@@ -1185,7 +1183,7 @@ function handleUI(request, apiKey) {
             <div class="warning" id="nsfw-warning" style="display:none; color:#dc2626;">⚠️ 已關閉安全模式 - 請負責任使用</div>
 
             <span class="label">✨ 提示詞</span>
-            <textarea id="prompt" rows="6" placeholder="描述你想生成的圖片...\n\n例如: 一個可愛的貓女孩"></textarea>
+            <textarea id="prompt" rows="6" placeholder="描述你想生成的圖片...\\n\\n例如: 一個可愛的貓女孩"></textarea>
             
             <button id="btn-gen" onclick="generate()">🚀 開始生成</button>
         </div>
@@ -1195,8 +1193,8 @@ function handleUI(request, apiKey) {
         <div class="result-area" id="result-container">
             <div style="color:#3f3f46; text-align:center;">
                 <p style="font-size: 16px;">📸 圖片預覽區域</p>
-                <p style="font-size: 12px;">支持多個 API 提供商 · 包含 12 個 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
-                <p style="font-size: 12px;">🎨 現已支持 ${Object.keys(CONFIG.STYLE_PRESETS).length} 種藝術風格</p>
+                <p style="font-size: 12px;">支持多個 API 提供商 · 包含 12 個 Pollinations 免費模型 · 最多生成 \\${CONFIG.MAX_IMAGES} 張圖片</p>
+                <p style="font-size: 12px;">🎨 現已支持 \\${Object.keys(CONFIG.STYLE_PRESETS).length} 種藝術風格</p>
                 <div class="spinner" id="spinner"></div>
             </div>
         </div>
@@ -1212,17 +1210,17 @@ function handleUI(request, apiKey) {
     </main>
 
     <script>
-        const API_KEY = "${apiKey}";
-        const ENDPOINT = "${origin}/v1/chat/completions";
-        const MODELS_ENDPOINT = "${origin}/v1/models";
-        const REFRESH_ENDPOINT = "${origin}/v1/models/refresh";
-        const PROVIDERS_ENDPOINT = "${origin}/v1/providers";
-        const STYLES = ${JSON.stringify(CONFIG.STYLE_PRESETS)};
-        const PROVIDERS = ${JSON.stringify(CONFIG.API_PROVIDERS)};
+        const API_KEY = "\\${apiKey}";
+        const ENDPOINT = "\\${origin}/v1/chat/completions";
+        const MODELS_ENDPOINT = "\\${origin}/v1/models";
+        const REFRESH_ENDPOINT = "\\${origin}/v1/models/refresh";
+        const PROVIDERS_ENDPOINT = "\\${origin}/v1/providers";
+        const STYLES = \\${JSON.stringify(CONFIG.STYLE_PRESETS)};
+        const PROVIDERS = \\${JSON.stringify(CONFIG.API_PROVIDERS)};
         
         let MODEL_CONFIGS = {};
         let MODEL_IDS = [];
-        let CURRENT_PROVIDER = "${CONFIG.DEFAULT_PROVIDER}";
+        let CURRENT_PROVIDER = "\\${CONFIG.DEFAULT_PROVIDER}";
 
         function copy(text) { navigator.clipboard.writeText(text); alert('已複製'); }
 
@@ -1243,16 +1241,16 @@ function handleUI(request, apiKey) {
                 
                 const freeCount = data.data.filter(m => m.isFree).length;
                 const totalCount = data.data.length;
-                document.getElementById('model-count').innerText = `載入 ${totalCount} 個模型 (${freeCount} 個免費)`;
+                document.getElementById('model-count').innerText = \`載入 \${totalCount} 個模型 (\${freeCount} 個免費)\`;
                 
                 const cacheInfo = data.cache_info;
-                let statusText = `系統就緒 · ${totalCount} 個模型可用 (${freeCount} 個免費)`;
+                let statusText = \`系統就緒 · \${totalCount} 個模型可用 (\${freeCount} 個免費)\`;
                 if (cacheInfo && cacheInfo.last_updated) {
                     const updateTime = new Date(cacheInfo.last_updated).toLocaleTimeString();
-                    statusText += ` · 更新於 ${updateTime}`;
+                    statusText += \` · 更新於 \${updateTime}\`;
                 }
                 document.getElementById('status-text').innerText = statusText;
-                appendLog("Models Loaded", `Total: ${totalCount}, Free: ${freeCount}`);
+                appendLog("Models Loaded", \`Total: \${totalCount}, Free: \${freeCount}\`);
             } catch (e) {
                 console.error('Failed to load models:', e);
                 appendLog("Error", "Failed to load models: " + e.message);
@@ -1279,12 +1277,12 @@ function handleUI(request, apiKey) {
             const freeModels = filteredModels.filter(id => MODEL_CONFIGS[id].isFree).length;
             const paidModels = filteredModels.length - freeModels;
             
-            let html = `<strong>${provider.icon} ${provider.name}</strong><br>`;
-            html += `模型數: ${filteredModels.length}個 `;
-            if (freeModels > 0) html += `(${freeModels}個免費)`;
-            if (paidModels > 0) html += ` (${paidModels}個付費)`;
-            html += `<br>`;
-            html += `特點: ${provider.features.join(' · ')}`;
+            let html = \`<strong>\${provider.icon} \${provider.name}</strong><br>\`;
+            html += \`模型數: \${filteredModels.length}個 \`;
+            if (freeModels > 0) html += \`(\${freeModels}個免費)\`;
+            if (paidModels > 0) html += \` (\${paidModels}個付費)\`;
+            html += \`<br>\`;
+            html += \`特點: \${provider.features.join(' · ')}\`;
             
             infoDiv.innerHTML = html;
         }
@@ -1312,7 +1310,7 @@ function handleUI(request, apiKey) {
                 html += '<optgroup label="🆓 基礎免費模型">';
                 basicModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
-                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
+                    html += \`<option value="\${id}">\${config.displayName} - \${config.description}</option>\`;
                 });
                 html += '</optgroup>';
             }
@@ -1322,7 +1320,7 @@ function handleUI(request, apiKey) {
                 html += '<optgroup label="🌟 專業免費模型">';
                 professionalModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
-                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
+                    html += \`<option value="\${id}">\${config.displayName} - \${config.description}</option>\`;
                 });
                 html += '</optgroup>';
             }
@@ -1332,7 +1330,7 @@ function handleUI(request, apiKey) {
                 html += '<optgroup label="🎯 特化免費模型">';
                 specializedModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
-                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
+                    html += \`<option value="\${id}">\${config.displayName} - \${config.description}</option>\`;
                 });
                 html += '</optgroup>';
             }
@@ -1342,7 +1340,7 @@ function handleUI(request, apiKey) {
                 html += '<optgroup label="✨ 實驗免費模型">';
                 experimentalModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
-                    html += `<option value="${id}">${config.displayName} - ${config.description}</option>`;
+                    html += \`<option value="\${id}">\${config.displayName} - \${config.description}</option>\`;
                 });
                 html += '</optgroup>';
             }
@@ -1353,7 +1351,7 @@ function handleUI(request, apiKey) {
                 paidModels.forEach(id => {
                     const config = MODEL_CONFIGS[id];
                     const nsfwTag = config.supportsNSFW ? '' : ' [僅安全]';
-                    html += `<option value="${id}">${config.displayName}${nsfwTag} - ${config.description} (${config.credits}學分)</option>`;
+                    html += \`<option value="\${id}">\${config.displayName}\${nsfwTag} - \${config.description} (\${config.credits}學分)</option>\`;
                 });
                 html += '</optgroup>';
             }
@@ -1381,7 +1379,7 @@ function handleUI(request, apiKey) {
                 
                 if (data.success) {
                     appendLog("Model Refresh", data);
-                    alert(`模型更新成功!\n總計: ${data.total_models}\n免費: ${data.free_models}\n付費: ${data.paid_models}`);
+                    alert(\`模型更新成功!\\n總計: \${data.total_models}\\n免費: \${data.free_models}\\n付費: \${data.paid_models}\`);
                     await loadModels();
                 } else {
                     throw new Error(data.message || 'Refresh failed');
@@ -1403,7 +1401,7 @@ function handleUI(request, apiKey) {
             if (style === 'auto') {
                 infoDiv.innerHTML = 'ℹ️ AI 將自動選擇最佳風格';
             } else if (styleConfig) {
-                infoDiv.innerHTML = `💡 將增強提示詞以匹配 ${styleConfig.name} 風格`;
+                infoDiv.innerHTML = \`💡 將增強提示詞以匹配 \${styleConfig.name} 風格\`;
             }
         }
 
@@ -1420,12 +1418,12 @@ function handleUI(request, apiKey) {
                 infoText = '✨ 完全免費 · 無需積分';
                 infoDiv.style.color = '#10b981';
             } else {
-                infoText = `💳 消耗 ${modelConfig.credits} 學分/張`;
+                infoText = \`💳 消耗 \${modelConfig.credits} 學分/張\`;
                 infoDiv.style.color = '#fbbf24';
             }
             
             if (providerInfo) {
-                infoText += ` · ${providerInfo.icon} ${providerInfo.name}`;
+                infoText += \` · \${providerInfo.icon} \${providerInfo.name}\`;
             }
             
             infoDiv.innerHTML = infoText;
@@ -1480,8 +1478,8 @@ function handleUI(request, apiKey) {
             const div = document.createElement('div');
             div.className = 'log-entry';
             const time = new Date().toLocaleTimeString();
-            let content = typeof data === 'object' ? `<span class="log-json">${JSON.stringify(data, null, 2)}</span>` : `<span style="color:#e4e4e7">${data}</span>`;
-            div.innerHTML = `<span class="log-time">[${time}]</span><span class="log-key">${step}</span>${content}`;
+            let content = typeof data === 'object' ? \`<span class="log-json">\${JSON.stringify(data, null, 2)}</span>\` : \`<span style="color:#e4e4e7">\${data}</span>\`;
+            div.innerHTML = \`<span class="log-time">[\${time}]</span><span class="log-key">\${step}</span>\${content}\`;
             if (logs.innerText.includes('//')) logs.innerHTML = '';
             logs.appendChild(div);
             logs.scrollTop = logs.scrollHeight;
@@ -1502,7 +1500,7 @@ function handleUI(request, apiKey) {
             const styleConfig = STYLES[style];
             const providerInfo = PROVIDERS[modelConfig.provider] || {};
             const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
-            const costText = modelConfig.isFree ? '免費' : `${modelConfig.credits * numImages}學分`;
+            const costText = modelConfig.isFree ? '免費' : \`\${modelConfig.credits * numImages}學分\`;
             
             const btn = document.getElementById('btn-gen');
             const spinner = document.getElementById('spinner');
@@ -1510,9 +1508,9 @@ function handleUI(request, apiKey) {
             const container = document.getElementById('result-container');
             const timeText = document.getElementById('time-text');
             
-            if(btn) { btn.disabled = true; btn.innerText = `生成 ${numImages} 張中...`; }
+            if(btn) { btn.disabled = true; btn.innerText = \`生成 \${numImages} 張中...\`; }
             if(spinner) spinner.style.display = 'inline-block';
-            if(status) status.innerText = `正在使用 ${modelConfig.displayName} (${providerInfo.icon} ${providerInfo.name}, ${styleConfig.name}, ${modeText}, ${costText})...`;
+            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} (\${providerInfo.icon} \${providerInfo.name}, \${styleConfig.name}, \${modeText}, \${costText})...\`;
             if(container) container.innerHTML = '<div class="spinner" style="display:block"></div>';
 
             const startTime = Date.now();
@@ -1529,7 +1527,7 @@ function handleUI(request, apiKey) {
                     style: style
                 };
 
-                appendLog("System", `Provider: ${providerInfo.name} | Model: ${modelConfig.displayName} | Style: ${styleConfig.name} | Free: ${modelConfig.isFree}`);
+                appendLog("System", \`Provider: \${providerInfo.name} | Model: \${modelConfig.displayName} | Style: \${styleConfig.name} | Free: \${modelConfig.isFree}\`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
@@ -1539,7 +1537,7 @@ function handleUI(request, apiKey) {
 
                 if (!res.ok) {
                     const errData = await res.json();
-                    throw new Error(errData.error?.message || `HTTP ${res.status}`);
+                    throw new Error(errData.error?.message || \`HTTP \${res.status}\`);
                 }
 
                 const reader = res.body.getReader();
@@ -1550,7 +1548,7 @@ function handleUI(request, apiKey) {
                     const { done, value } = await reader.read();
                     if (done) break;
                     const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n');
+                    const lines = chunk.split('\\n');
                     
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
@@ -1576,22 +1574,22 @@ function handleUI(request, apiKey) {
                 if (matches.length > 0) {
                     const imageUrls = matches.map(m => m[1]);
                     const gridHtml = imageUrls.map((url, idx) => 
-                        `<div class="image-item">
-                            <img src="${url}" class="result-img" onclick="window.open(this.src)">
-                            <div class="image-label">圖片 ${idx + 1} / ${imageUrls.length} · ${providerInfo.icon} ${providerInfo.name} · ${styleConfig.name}</div>
-                        </div>`
+                        \`<div class="image-item">
+                            <img src="\${url}" class="result-img" onclick="window.open(this.src)">
+                            <div class="image-label">圖片 \${idx + 1} / \${imageUrls.length} · \${providerInfo.icon} \${providerInfo.name} · \${styleConfig.name}</div>
+                        </div>\`
                     ).join('');
                     
-                    if(container) container.innerHTML = `<div class="image-grid">${gridHtml}</div>`;
-                    if(status) status.innerText = `✅ ${modelConfig.displayName} (${providerInfo.icon} ${providerInfo.name}, ${styleConfig.name}, ${modeText}) 成功生成 ${imageUrls.length} 張 | ${costText}`;
-                    if(timeText) timeText.innerText = `耗時: ${((Date.now()-startTime)/1000).toFixed(2)}s`;
-                    appendLog("Success", `Generated ${imageUrls.length} images via ${providerInfo.name} with ${styleConfig.name} style`);
+                    if(container) container.innerHTML = \`<div class="image-grid">\${gridHtml}</div>\`;
+                    if(status) status.innerText = \`✅ \${modelConfig.displayName} (\${providerInfo.icon} \${providerInfo.name}, \${styleConfig.name}, \${modeText}) 成功生成 \${imageUrls.length} 張 | \${costText}\`;
+                    if(timeText) timeText.innerText = \`耗時: \${((Date.now()-startTime)/1000).toFixed(2)}s\`;
+                    appendLog("Success", \`Generated \${imageUrls.length} images via \${providerInfo.name} with \${styleConfig.name} style\`);
                 } else {
                     throw new Error("無法提取圖片 URL");
                 }
 
             } catch (e) {
-                if(container) container.innerHTML = `<div style="color:#ef4444; padding:20px; text-align:center">❌ ${e.message}</div>`;
+                if(container) container.innerHTML = \`<div style="color:#ef4444; padding:20px; text-align:center">❌ \${e.message}</div>\`;
                 if(status) status.innerText = "❌ 錯誤";
                 appendLog("Error", e.message);
             } finally {
