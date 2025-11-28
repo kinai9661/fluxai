@@ -1,86 +1,18 @@
-# Cloudflare Workers 配置文件
-# AI Generator 2API - v2.5.0
-# 項目: https://github.com/kinai9661/ai-generator-2api-cfwork
-
-name = "fluxai"
+name = "ai-generator-multi-model"
 main = "worker.js"
 compatibility_date = "2025-11-28"
 
-# ==========================================
-# 環境變量配置說明
-# ==========================================
-# 請在 Cloudflare Workers Dashboard 中設置以下環境變量:
-# 1. API_MASTER_KEY - 你的 API 訪問密鑰 (必須)
-#    示例: "sk-your-secret-key-here"
-#    重要: 請在 Dashboard 中標記為「加密」
-#
-# 本地開發時可以取消註釋下面的 [vars] 部分
-# ==========================================
+# 關鍵修復: 強制顯式声明為空數組
+compatibility_flags = []
 
-# [vars]
-# API_MASTER_KEY = "1"  # 僅用於本地測試,生產環境請在 Dashboard 設置
-
-# ==========================================
-# Workers 配置
-# ==========================================
-
-# 限制
-[limits]
-# CPU 時間限制 (毫秒)
-cpu_ms = 50
-
-# 路由配置 (可選)
-# 如果你有自定義域名,可以配置如下:
-# [[routes]]
-# pattern = "api.yourdomain.com/*"
-# zone_name = "yourdomain.com"
-
-# ==========================================
-# 觀察性配置 (可選)
-# ==========================================
-
-# 啟用日誌
+# 關鍵修復: 滿足 Cloudflare 新版部署要求
 [observability]
-logpush = true
+enabled = true
 
-# ==========================================
-# 部署配置
-# ==========================================
+# 环境变量说明
+# 请在 Cloudflare Dashboard 中设置:
+# API_MASTER_KEY = "your-secret-key"
 
-# 生產環境
-[env.production]
-name = "ai-generator-2api"
-vars = { ENVIRONMENT = "production" }
-
-# 測試環境
-[env.staging]
-name = "ai-generator-2api-staging"
-vars = { ENVIRONMENT = "staging" }
-
-# ==========================================
-# 兼容性標誌
-# ==========================================
-[compatibility_flags]
-# 啟用 nodejs_compat 以支持 Node.js API
-# nodejs_compat = true
-
-# ==========================================
-# 構建配置
-# ==========================================
-
-# 如果使用 TypeScript 或需要構建步驟,可以配置:
-# [build]
-# command = "npm run build"
-# watch_dirs = ["src"]
-
-# ==========================================
-# 開發配置
-# ==========================================
-
+# 本地开发配置
 [dev]
-# 本地開發端口
 port = 8787
-# 本地開發 IP
-ip = "0.0.0.0"
-# 自動打開瀏覽器
-open = false
