@@ -1,21 +1,21 @@
 // =================================================================================
 //  項目: ai-generator-2api (Cloudflare Worker 單文件版)
-//  版本: 2.9.0 (代號: Auto-Sync Edition)
+//  版本: 2.10.0 (代號: Style Master Edition)
 //  作者: 首席AI執行官
 //  日期: 2025-11-28
 //
-//  [v2.9.0 變更日誌]
-//  1. [新增] 自動更新模型列表功能
-//  2. [新增] /v1/models/refresh 端點
-//  3. [增強] 從上游動態獲取可用模型
-//  4. [優化] 模型緩存機制
+//  [v2.10.0 變更日誌]
+//  1. [新增] 15+ 種藝術風格預設系統
+//  2. [新增] 日本漫畫、動漫、寫實、油畫等風格
+//  3. [增強] 風格智能融合到提示詞
+//  4. [優化] Web UI 風格選擇器
 //  5. [保留] 所有現有功能完整支持
 // =================================================================================
 
 // --- [第一部分: 核心配置] ---
 const CONFIG = {
   PROJECT_NAME: "ai-generator-multi-model",
-  PROJECT_VERSION: "2.9.0",
+  PROJECT_VERSION: "2.10.0",
   
   API_MASTER_KEY: "1", 
   
@@ -31,10 +31,111 @@ const CONFIG = {
   },
   
   // 模型緩存配置
-  MODEL_CACHE_TTL: 3600, // 1小時緩存
-  AUTO_REFRESH_MODELS: true, // 自動刷新模型
+  MODEL_CACHE_TTL: 3600,
+  AUTO_REFRESH_MODELS: true,
   
-  // 靜態配置的 Pollinations 免費模型
+  // 藝術風格預設
+  STYLE_PRESETS: {
+    "auto": {
+      name: "自動",
+      prompt: "",
+      description: "讓AI自動選擇最佳風格"
+    },
+    "anime": {
+      name: "日本動漫",
+      prompt: "anime style, vibrant colors, manga art, Japanese animation, cel shading",
+      description: "日本動畫風格,明亮色彩"
+    },
+    "manga": {
+      name: "日本漫畫",
+      prompt: "manga style, black and white, ink drawing, Japanese comic book art, detailed linework, screentone shading",
+      description: "黑白漫畫風格,細緻線條"
+    },
+    "realistic": {
+      name: "寫實照片",
+      prompt: "photorealistic, highly detailed, 8k uhd, professional photography, natural lighting, dslr quality",
+      description: "照片級寫實風格"
+    },
+    "oil-painting": {
+      name: "油畫",
+      prompt: "oil painting, classical art, brushstrokes visible, rich colors, canvas texture, Renaissance style",
+      description: "古典油畫風格"
+    },
+    "watercolor": {
+      name: "水彩畫",
+      prompt: "watercolor painting, soft edges, translucent colors, artistic, flowing pigments, paper texture",
+      description: "柔和水彩風格"
+    },
+    "cyberpunk": {
+      name: "賽博朋克",
+      prompt: "cyberpunk style, neon lights, futuristic, dark atmosphere, high tech low life, dystopian city",
+      description: "未來霓虹科幻風格"
+    },
+    "fantasy": {
+      name: "奇幻藝術",
+      prompt: "fantasy art, magical, ethereal, detailed illustration, epic scene, dramatic lighting, concept art",
+      description: "魔幻奇幻風格"
+    },
+    "sketch": {
+      name: "素描",
+      prompt: "pencil sketch, graphite drawing, hand drawn, artistic sketch, detailed shading, monochrome",
+      description: "鉛筆素描風格"
+    },
+    "3d-render": {
+      name: "3D渲染",
+      prompt: "3d render, octane render, blender, highly detailed, smooth surfaces, professional 3d modeling, ray tracing",
+      description: "三維建模渲染"
+    },
+    "pixel-art": {
+      name: "像素藝術",
+      prompt: "pixel art, 8bit style, retro gaming, pixelated, isometric, vibrant colors, nostalgic",
+      description: "復古像素風格"
+    },
+    "comic": {
+      name: "美式漫畫",
+      prompt: "comic book style, bold lines, halftone dots, action pose, superhero art, dynamic composition",
+      description: "美式漫畫風格"
+    },
+    "impressionism": {
+      name: "印象派",
+      prompt: "impressionist painting, loose brushwork, light and color emphasis, Monet style, outdoor scene",
+      description: "莫奈印象派風格"
+    },
+    "art-nouveau": {
+      name: "新藝術",
+      prompt: "art nouveau style, organic forms, flowing lines, decorative elements, elegant curves, vintage poster",
+      description: "裝飾藝術風格"
+    },
+    "steampunk": {
+      name: "蒸汽朋克",
+      prompt: "steampunk style, Victorian era, brass and copper, gears and cogs, industrial, vintage machinery",
+      description: "維多利亞機械風格"
+    },
+    "minimalist": {
+      name: "極簡主義",
+      prompt: "minimalist art, clean lines, simple composition, limited color palette, modern design, negative space",
+      description: "簡約現代風格"
+    },
+    "surreal": {
+      name: "超現實",
+      prompt: "surrealist art, dreamlike, impossible geometry, Salvador Dali style, bizarre composition, subconscious imagery",
+      description: "達利超現實風格"
+    },
+    "chinese-ink": {
+      name: "中國水墨",
+      prompt: "Chinese ink painting, sumi-e style, flowing brushstrokes, monochrome or minimal color, traditional Asian art",
+      description: "傳統水墨畫風格"
+    },
+    "ukiyo-e": {
+      name: "浮世繪",
+      prompt: "ukiyo-e style, Japanese woodblock print, flat colors, bold outlines, Edo period art, Hokusai style",
+      description: "日本浮世繪風格"
+    }
+  },
+  
+  DEFAULT_STYLE: "auto",
+  
+  // Pollinations 靜態配置
   POLLINATIONS_MODELS: {
     "pollinations-flux": {
       displayName: "Pollinations Flux",
@@ -43,7 +144,7 @@ const CONFIG = {
       credits: 0,
       speed: "fast",
       quality: "excellent",
-      description: "免費 Flux 模型,高質量快速生成",
+      description: "免費Flux模型,高質量快速生成",
       maxImages: 4,
       supportsNSFW: true,
       isFree: true
@@ -74,7 +175,6 @@ const CONFIG = {
     }
   },
   
-  // 上游服務模型的默認配置
   UPSTREAM_MODEL_DEFAULTS: {
     maxImages: 4,
     supportsNSFW: true,
@@ -87,7 +187,7 @@ const CONFIG = {
   DEFAULT_NUM_IMAGES: 1,
 };
 
-// 全局模型緩存
+// 全局緩存
 let CACHED_MODELS = null;
 let CACHE_TIMESTAMP = 0;
 
@@ -103,7 +203,8 @@ export default {
     if (url.pathname === '/v1/chat/completions') return handleChatCompletions(request, apiKey);
     if (url.pathname === '/v1/images/generations') return handleImageGenerations(request, apiKey);
     if (url.pathname === '/v1/models') return handleModelsRequest();
-    if (url.pathname === '/v1/models/refresh') return handleModelsRefresh(request, apiKey); // NEW
+    if (url.pathname === '/v1/models/refresh') return handleModelsRefresh(request, apiKey);
+    if (url.pathname === '/v1/styles') return handleStylesRequest(); // NEW
     
     return createErrorResponse(`Endpoint not found: ${url.pathname}`, 404, 'not_found');
   }
@@ -152,8 +253,22 @@ function getFakeHeaders(fingerprint, anonUserId) {
 }
 
 /**
- * 從上游服務獲取模型列表
+ * 應用風格到提示詞
  */
+function applyStyleToPrompt(prompt, style) {
+    if (!style || style === "auto" || style === "none") {
+        return prompt;
+    }
+    
+    const styleConfig = CONFIG.STYLE_PRESETS[style];
+    if (!styleConfig || !styleConfig.prompt) {
+        return prompt;
+    }
+    
+    // 將風格提示詞融合到用戶提示詞中
+    return `${prompt}, ${styleConfig.prompt}`;
+}
+
 async function fetchUpstreamModels() {
     try {
         const fingerprint = generateFingerprint();
@@ -178,7 +293,6 @@ async function fetchUpstreamModels() {
         if (data && Array.isArray(data.models)) {
             return data.models;
         }
-        
         return null;
     } catch (e) {
         console.log('[Model Sync] Error:', e.message);
@@ -186,9 +300,6 @@ async function fetchUpstreamModels() {
     }
 }
 
-/**
- * 轉換上游模型為內部格式
- */
 function convertUpstreamModel(upstreamModel) {
     const modelId = upstreamModel.id || upstreamModel.name;
     const provider = upstreamModel.provider || "replicate";
@@ -199,7 +310,7 @@ function convertUpstreamModel(upstreamModel) {
         credits: upstreamModel.credits || 2,
         speed: upstreamModel.speed || CONFIG.UPSTREAM_MODEL_DEFAULTS.speed,
         quality: upstreamModel.quality || CONFIG.UPSTREAM_MODEL_DEFAULTS.quality,
-        description: upstreamModel.description || "AI 圖像生成模型",
+        description: upstreamModel.description || "AI圖像生成模型",
         maxImages: upstreamModel.maxImages || CONFIG.UPSTREAM_MODEL_DEFAULTS.maxImages,
         supportsNSFW: upstreamModel.supportsNSFW !== false,
         isFree: false,
@@ -207,21 +318,14 @@ function convertUpstreamModel(upstreamModel) {
     };
 }
 
-/**
- * 獲取所有模型(含緩存)
- */
 async function getAllModels() {
     const now = Date.now();
     
-    // 檢查緩存
     if (CACHED_MODELS && (now - CACHE_TIMESTAMP) < CONFIG.MODEL_CACHE_TTL * 1000) {
         return CACHED_MODELS;
     }
     
-    // 嘗試從上游獲取
     const upstreamModels = await fetchUpstreamModels();
-    
-    // 合併 Pollinations 免費模型和上游模型
     const allModels = { ...CONFIG.POLLINATIONS_MODELS };
     
     if (upstreamModels && upstreamModels.length > 0) {
@@ -231,10 +335,8 @@ async function getAllModels() {
                 allModels[modelId] = convertUpstreamModel(model);
             }
         });
-        
         console.log(`[Model Sync] Synced ${upstreamModels.length} upstream models`);
     } else {
-        // 如果上游獲取失敗,使用備用靜態配置
         console.log('[Model Sync] Using fallback static models');
         Object.assign(allModels, {
             "flux-schnell": {
@@ -269,24 +371,12 @@ async function getAllModels() {
                 maxImages: 1,
                 supportsNSFW: true,
                 isFree: false
-            },
-            "stable-diffusion-xl": {
-                displayName: "Stable Diffusion XL",
-                provider: "stability",
-                credits: 2,
-                speed: "medium",
-                quality: "excellent",
-                description: "開源經典模型",
-                maxImages: 4,
-                supportsNSFW: true,
-                isFree: false
             }
         });
     }
     
     CACHED_MODELS = allModels;
     CACHE_TIMESTAMP = now;
-    
     return allModels;
 }
 
@@ -294,7 +384,6 @@ function getModelConfig(model) {
     if (CACHED_MODELS && CACHED_MODELS[model]) {
         return CACHED_MODELS[model];
     }
-    // 回退到 Pollinations 免費模型
     return CONFIG.POLLINATIONS_MODELS[model] || CONFIG.POLLINATIONS_MODELS["pollinations-flux"];
 }
 
@@ -514,8 +603,18 @@ async function handleChatCompletions(request, apiKey) {
                 if (part.type === 'text') prompt += part.text + " ";
             }
         }
+        
+        // 應用風格
+        const style = body.style || CONFIG.DEFAULT_STYLE;
+        const styledPrompt = applyStyleToPrompt(prompt, style);
+        
+        logger.add("Style Applied", {
+            originalPrompt: prompt.substring(0, 50) + "...",
+            style: style,
+            styleName: CONFIG.STYLE_PRESETS[style]?.name || "Custom",
+            finalPrompt: styledPrompt.substring(0, 80) + "..."
+        });
 
-        // 獲取最新模型配置
         const allModels = await getAllModels();
         const requestedModel = body.model || "pollinations-flux";
         const model = allModels[requestedModel] ? requestedModel : "pollinations-flux";
@@ -543,7 +642,7 @@ async function handleChatCompletions(request, apiKey) {
         else if (aspectRatio === "3:4") finalAspectRatio = "3:4";
         else finalAspectRatio = "1:1";
 
-        const imageUrls = await performBatchGeneration(prompt, model, finalAspectRatio, numImages, logger, safeMode);
+        const imageUrls = await performBatchGeneration(styledPrompt, model, finalAspectRatio, numImages, logger, safeMode);
 
         if (imageUrls.length === 0) throw new Error("All image generations failed");
 
@@ -603,7 +702,12 @@ async function handleImageGenerations(request, apiKey) {
 
     try {
         const body = await request.json();
-        const prompt = body.prompt;
+        let prompt = body.prompt;
+        
+        // 應用風格
+        const style = body.style || CONFIG.DEFAULT_STYLE;
+        prompt = applyStyleToPrompt(prompt, style);
+        
         const allModels = await getAllModels();
         const requestedModel = body.model || "pollinations-flux";
         const model = allModels[requestedModel] ? requestedModel : "pollinations-flux";
@@ -661,7 +765,6 @@ function corsHeaders(headers = {}) {
 async function handleModelsRequest() {
     const allModels = await getAllModels();
     const modelIds = Object.keys(allModels);
-    
     const cacheAge = CACHE_TIMESTAMP > 0 ? Math.floor((Date.now() - CACHE_TIMESTAMP) / 1000) : 0;
     
     return new Response(JSON.stringify({
@@ -682,18 +785,12 @@ async function handleModelsRequest() {
     }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
 }
 
-/**
- * 手動刷新模型列表
- */
 async function handleModelsRefresh(request, apiKey) {
     if (!verifyAuth(request, apiKey)) return createErrorResponse('Unauthorized', 401, 'unauthorized');
     
     try {
-        // 清除緩存
         CACHED_MODELS = null;
         CACHE_TIMESTAMP = 0;
-        
-        // 重新獲取
         const allModels = await getAllModels();
         const modelCount = Object.keys(allModels).length;
         const freeCount = Object.values(allModels).filter(m => m.isFree).length;
@@ -710,6 +807,18 @@ async function handleModelsRefresh(request, apiKey) {
     } catch (e) {
         return createErrorResponse(e.message, 500, 'refresh_failed');
     }
+}
+
+function handleStylesRequest() {
+    return new Response(JSON.stringify({
+        object: 'list',
+        data: Object.keys(CONFIG.STYLE_PRESETS).map(id => ({
+            id,
+            name: CONFIG.STYLE_PRESETS[id].name,
+            description: CONFIG.STYLE_PRESETS[id].description,
+            prompt_enhancement: CONFIG.STYLE_PRESETS[id].prompt
+        }))
+    }), { headers: corsHeaders({ 'Content-Type': 'application/json' }) });
 }
 
 function handleAgeVerification(request) {
@@ -793,6 +902,13 @@ function handleUI(request, apiKey) {
     return new Response(null, { status: 302, headers: { 'Location': '/age-verify' } });
   }
   
+  // 生成風格選項
+  const styleOptions = Object.keys(CONFIG.STYLE_PRESETS).map(styleId => {
+    const style = CONFIG.STYLE_PRESETS[styleId];
+    const isDefault = styleId === CONFIG.DEFAULT_STYLE;
+    return `<option value="${styleId}" ${isDefault ? 'selected' : ''}>${style.name} - ${style.description}</option>`;
+  }).join('\n');
+  
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -806,7 +922,6 @@ function handleUI(request, apiKey) {
       .main { flex: 1; display: flex; flex-direction: column; padding: 24px; background-color: #000; }
       h2 { margin-top: 0; font-size: 20px; color: #fff; display: flex; align-items: center; gap: 10px; }
       .badge { background: var(--primary); color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-      .badge-free { background: var(--success); }
       .box { background: #27272a; padding: 16px; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 20px; }
       .warning-box { background: #7f1d1d; border-color: #991b1b; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #fecaca; }
       .info-box { background: #064e3b; border: 1px solid #059669; padding: 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; color: #6ee7b7; }
@@ -871,6 +986,12 @@ function handleUI(request, apiKey) {
             <button class="btn-refresh" onclick="refreshModels()">🔄 刷新模型列表</button>
             <div id="model-info" style="font-size: 11px; color: #10b981; margin-top: 8px;"></div>
             
+            <span class="label">🎨 藝術風格</span>
+            <select id="style" onchange="updateStyleInfo()">
+                ${styleOptions}
+            </select>
+            <div id="style-info" style="font-size: 11px; color: #a1a1aa; margin-top: -8px; margin-bottom: 12px;"></div>
+            
             <span class="label">🖼️ 生成數量</span>
             <select id="num-images">
                 <option value="1" selected>1 張</option>
@@ -896,7 +1017,7 @@ function handleUI(request, apiKey) {
             <div class="warning" id="nsfw-warning" style="display:none; color:#dc2626;">⚠️ 已關閉安全模式 - 請負責任使用</div>
 
             <span class="label">✨ 提示詞</span>
-            <textarea id="prompt" rows="6" placeholder="描述你想生成的圖片...\n\n例如: A futuristic city with neon lights, cyberpunk style"></textarea>
+            <textarea id="prompt" rows="6" placeholder="描述你想生成的圖片...\n\n例如: 一個未來城市的夜景"></textarea>
             
             <button id="btn-gen" onclick="generate()">🚀 開始生成</button>
         </div>
@@ -907,6 +1028,7 @@ function handleUI(request, apiKey) {
             <div style="color:#3f3f46; text-align:center;">
                 <p style="font-size: 16px;">📸 圖片預覽區域</p>
                 <p style="font-size: 12px;">支持多個 AI 模型 · 包含 Pollinations 免費模型 · 最多生成 ${CONFIG.MAX_IMAGES} 張圖片</p>
+                <p style="font-size: 12px;">🎨 現已支持 ${Object.keys(CONFIG.STYLE_PRESETS).length} 種藝術風格</p>
                 <div class="spinner" id="spinner"></div>
             </div>
         </div>
@@ -926,13 +1048,13 @@ function handleUI(request, apiKey) {
         const ENDPOINT = "${origin}/v1/chat/completions";
         const MODELS_ENDPOINT = "${origin}/v1/models";
         const REFRESH_ENDPOINT = "${origin}/v1/models/refresh";
+        const STYLES = ${JSON.stringify(CONFIG.STYLE_PRESETS)};
         
         let MODEL_CONFIGS = {};
         let MODEL_IDS = [];
 
         function copy(text) { navigator.clipboard.writeText(text); alert('已複製'); }
 
-        // 載入模型列表
         async function loadModels() {
             try {
                 const res = await fetch(MODELS_ENDPOINT);
@@ -959,7 +1081,6 @@ function handleUI(request, apiKey) {
                     statusText += \` · 更新於 \${updateTime}\`;
                 }
                 document.getElementById('status-text').innerText = statusText;
-                
                 appendLog("Models Loaded", \`Total: \${totalCount}, Free: \${freeCount}\`);
             } catch (e) {
                 console.error('Failed to load models:', e);
@@ -967,7 +1088,6 @@ function handleUI(request, apiKey) {
             }
         }
         
-        // 更新模型下拉選單
         function updateModelSelect() {
             const modelSelect = document.getElementById('model');
             const freeModels = MODEL_IDS.filter(id => MODEL_CONFIGS[id].isFree);
@@ -998,7 +1118,6 @@ function handleUI(request, apiKey) {
             updateModelInfo();
         }
         
-        // 刷新模型列表
         async function refreshModels() {
             const btn = event.target;
             btn.disabled = true;
@@ -1006,12 +1125,10 @@ function handleUI(request, apiKey) {
             
             try {
                 appendLog("System", "Refreshing models from upstream...");
-                
                 const res = await fetch(REFRESH_ENDPOINT, {
                     method: 'POST',
                     headers: { 'Authorization': 'Bearer ' + API_KEY }
                 });
-                
                 const data = await res.json();
                 
                 if (data.success) {
@@ -1027,6 +1144,18 @@ function handleUI(request, apiKey) {
             } finally {
                 btn.disabled = false;
                 btn.innerText = '🔄 刷新模型列表';
+            }
+        }
+        
+        function updateStyleInfo() {
+            const style = document.getElementById('style').value;
+            const styleConfig = STYLES[style];
+            const infoDiv = document.getElementById('style-info');
+            
+            if (style === 'auto') {
+                infoDiv.innerHTML = 'ℹ️ AI 將自動選擇最佳風格';
+            } else if (styleConfig) {
+                infoDiv.innerHTML = \`💡 將增強提示詞以匹配 \${styleConfig.name} 風格\`;
             }
         }
 
@@ -1088,8 +1217,8 @@ function handleUI(request, apiKey) {
             updateSafeMode();
         }
         
-        // 初始化載入模型
         loadModels();
+        updateStyleInfo();
 
         function appendLog(step, data) {
             const logs = document.getElementById('logs');
@@ -1108,12 +1237,14 @@ function handleUI(request, apiKey) {
             if (!prompt) return alert('請輸入提示詞');
 
             const model = document.getElementById('model').value;
+            const style = document.getElementById('style').value;
             const numImages = parseInt(document.getElementById('num-images').value) || 1;
             const aspectRatio = document.getElementById('ratio').value;
             const safeMode = document.getElementById('safe-mode').checked;
             const modelConfig = MODEL_CONFIGS[model];
             if (!modelConfig) return alert('模型配置錯誤');
             
+            const styleConfig = STYLES[style];
             const modeText = safeMode ? '安全模式' : '🔞 藝術模式';
             const costText = modelConfig.isFree ? '免費' : \`\${modelConfig.credits * numImages}學分\`;
             
@@ -1125,7 +1256,7 @@ function handleUI(request, apiKey) {
             
             if(btn) { btn.disabled = true; btn.innerText = \`生成 \${numImages} 張中...\`; }
             if(spinner) spinner.style.display = 'inline-block';
-            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} (\${modeText}, \${costText})...\`;
+            if(status) status.innerText = \`正在使用 \${modelConfig.displayName} (\${styleConfig.name}, \${modeText}, \${costText})...\`;
             if(container) container.innerHTML = '<div class="spinner" style="display:block"></div>';
 
             const startTime = Date.now();
@@ -1138,10 +1269,11 @@ function handleUI(request, apiKey) {
                     is_web_ui: true,
                     n: numImages,
                     aspect_ratio: aspectRatio,
-                    safe_mode: safeMode
+                    safe_mode: safeMode,
+                    style: style
                 };
 
-                appendLog("System", \`Using \${modelConfig.displayName} | Provider: \${modelConfig.provider} | Free: \${modelConfig.isFree}\`);
+                appendLog("System", \`Model: \${modelConfig.displayName} | Style: \${styleConfig.name} | Provider: \${modelConfig.provider} | Free: \${modelConfig.isFree}\`);
 
                 const res = await fetch(ENDPOINT, {
                     method: 'POST',
@@ -1190,14 +1322,14 @@ function handleUI(request, apiKey) {
                     const gridHtml = imageUrls.map((url, idx) => 
                         \`<div class="image-item">
                             <img src="\${url}" class="result-img" onclick="window.open(this.src)">
-                            <div class="image-label">圖片 \${idx + 1} / \${imageUrls.length}</div>
+                            <div class="image-label">圖片 \${idx + 1} / \${imageUrls.length} · \${styleConfig.name}</div>
                         </div>\`
                     ).join('');
                     
                     if(container) container.innerHTML = \`<div class="image-grid">\${gridHtml}</div>\`;
-                    if(status) status.innerText = \`✅ \${modelConfig.displayName} (\${modeText}) 成功生成 \${imageUrls.length} 張 | \${costText}\`;
+                    if(status) status.innerText = \`✅ \${modelConfig.displayName} (\${styleConfig.name}, \${modeText}) 成功生成 \${imageUrls.length} 張 | \${costText}\`;
                     if(timeText) timeText.innerText = \`耗時: \${((Date.now()-startTime)/1000).toFixed(2)}s\`;
-                    appendLog("Success", \`Generated \${imageUrls.length} images\`);
+                    appendLog("Success", \`Generated \${imageUrls.length} images with \${styleConfig.name} style\`);
                 } else {
                     throw new Error("無法提取圖片 URL");
                 }
